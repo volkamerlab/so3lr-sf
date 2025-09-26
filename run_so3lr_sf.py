@@ -165,14 +165,21 @@ def get_ligand_files(ligands_input: str, output_dir: Optional[Path] = None) -> L
         raise FileNotFoundError(f"Ligands input not found: {ligands_input}")
 
     if ligands_path.is_file():
-        # Check if it's a multi-structure file
-        if ligands_path.suffix.lower() == '.sdf':
+        # Check if it's a multi-structure file (SDF or XYZ)
+        if ligands_path.suffix.lower() in ['.sdf', '.xyz']:
             try:
                 # Try to extract multiple ligands
                 extract_dir = output_dir / "individual_ligands" if output_dir else Path("individual_ligands")
                 ligand_files = extract_ligands(ligands_path, extract_dir)
-                logger.info(f"Extracted {len(ligand_files)} ligands from {ligands_path}")
-                return ligand_files
+
+                # Only return extracted files if we found multiple structures
+                if len(ligand_files) > 1:
+                    logger.info(f"Extracted {len(ligand_files)} ligands from {ligands_path}")
+                    return ligand_files
+                else:
+                    # Single structure - return original file
+                    logger.info(f"Single structure found in {ligands_path}")
+                    return [str(ligands_path)]
             except:
                 # Fallback to treating as single ligand
                 logger.info(f"Treating {ligands_path} as single ligand file")

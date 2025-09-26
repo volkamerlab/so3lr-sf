@@ -50,6 +50,44 @@ def find_so3lr_params() -> Optional[str]:
     return None
 
 
+def _read_multi_sdf_blocks(file_path: Path) -> List[Atoms]:
+    """
+    Read multiple structures from SDF file by splitting on $$$$ delimiters.
+
+    Args:
+        file_path: Path to SDF file
+
+    Returns:
+        List[Atoms]: List of structures from the SDF file
+    """
+    import tempfile
+    structures = []
+
+    with open(file_path, 'r') as f:
+        content = f.read()
+
+    # Split by $$$$ delimiter and filter empty blocks
+    sdf_blocks = [block.strip() for block in content.split('$$$$') if block.strip()]
+
+    for i, block in enumerate(sdf_blocks):
+        # Create temporary SDF file for this block
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sdf', delete=False) as temp_f:
+            temp_f.write(block + '\n$$$$\n')
+            temp_file = temp_f.name
+
+        try:
+            # Read this single molecule with ASE
+            atoms = read(temp_file, format='sdf')
+            structures.append(atoms)
+        except Exception as e:
+            print(f"Warning: Could not read SDF block {i+1}: {e}")
+        finally:
+            # Clean up temp file
+            Path(temp_file).unlink(missing_ok=True)
+
+    return structures
+
+
 def read_structure(file_path: Union[str, Path], index: Union[int, str] = 0) -> Union[Atoms, List[Atoms]]:
     """
     Read molecular structure from various file formats with multi-structure support.
@@ -88,7 +126,19 @@ def read_structure(file_path: Union[str, Path], index: Union[int, str] = 0) -> U
         raise FileNotFoundError(f"Structure file not found: {file_path}")
 
     try:
-        # Handle different index types
+        # Special handling for multi-molecule SDF files
+        if file_path.suffix.lower() == '.sdf' and (index == "all" or index == ":"):
+            with open(file_path, 'r') as f:
+                content = f.read()
+
+            # Check if this is a multi-molecule SDF (multiple $$$$ delimiters)
+            if content.count('$$$$') > 1:
+                structures = _read_multi_sdf_blocks(file_path)
+                if len(structures) == 0:
+                    raise ValueError(f"No valid structures found in {file_path}")
+                return structures
+
+        # Handle different index types for non-SDF or single-molecule cases
         if index == "all" or index == ":":
             read_index = ":"
         else:
