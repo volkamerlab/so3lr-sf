@@ -5,12 +5,14 @@ This module contains utility functions for model detection, structure reading,
 and file handling operations.
 """
 
-import os
+import json
+import logging
+import tempfile
 import numpy as np
 from pathlib import Path
 from typing import Optional, List, Union
 from ase import Atoms
-from ase.io import read
+from ase.io import read, write
 
 
 def find_so3lr_params() -> Optional[str]:
@@ -177,8 +179,6 @@ def write_structure(atoms: Atoms, file_path: Union[str, Path], format: Optional[
         >>> write_structure(atoms, "output.xyz")
         >>> write_structure(atoms, "output.pdb", format="pdb")
     """
-    from ase.io import write
-
     file_path = Path(file_path)
 
     # Create directory if it doesn't exist
@@ -230,6 +230,64 @@ def validate_structure(atoms: Atoms) -> bool:
     return True
 
 
+def get_ligand_files(ligands_input: str, output_dir: Optional[Union[str, Path]] = None) -> List[str]:
+    """
+    Get list of ligand files from input (single file, directory, or multi-SDF).
+
+    Args:
+        ligands_input: Path to ligands (file or directory)
+        output_dir: Output directory for extracted ligands
+
+    Returns:
+        List of ligand file paths
+    """
+    logger = logging.getLogger(__name__)
+    ligands_path = Path(ligands_input)
+
+    if not ligands_path.exists():
+        raise FileNotFoundError(f"Ligands input not found: {ligands_input}")
+
+    if ligands_path.is_file():
+        # Check if it's a multi-structure file (SDF or XYZ)
+        if ligands_path.suffix.lower() in ['.sdf', '.xyz']:
+            try:
+                # Try to extract multiple ligands
+                from .structure_ops import extract_ligands
+                extract_dir = output_dir / "individual_ligands" if output_dir else Path("individual_ligands")
+                ligand_files = extract_ligands(ligands_path, extract_dir)
+
+                # Only return extracted files if we found multiple structures
+                if len(ligand_files) > 1:
+                    logger.info(f"Extracted {len(ligand_files)} ligands from {ligands_path}")
+                    return ligand_files
+                else:
+                    # Single structure - return original file
+                    logger.info(f"Single structure found in {ligands_path}")
+                    return [str(ligands_path)]
+            except:
+                # Fallback to treating as single ligand
+                logger.info(f"Treating {ligands_path} as single ligand file")
+                return [str(ligands_path)]
+        else:
+            # Single ligand file
+            logger.info(f"Using single ligand file: {ligands_path}")
+            return [str(ligands_path)]
+
+    elif ligands_path.is_dir():
+        # Directory with ligand files
+        ligand_files = []
+        supported_extensions = ['.xyz', '.sdf', '.mol', '.mol2', '.pdb']
+
+        for ext in supported_extensions:
+            ligand_files.extend([str(f) for f in ligands_path.glob(f"*{ext}")])
+
+        logger.info(f"Found {len(ligand_files)} ligand files in directory: {ligands_path}")
+        return sorted(ligand_files)
+
+    else:
+        raise ValueError(f"Invalid ligands input: {ligands_input}")
+
+
 def write_opt_structure(
     atoms: Atoms,
     structure_type: str,
@@ -276,3 +334,84 @@ def write_opt_structure(
     # Create full path and save
     file_path = type_dir / filename
     return write_structure(atoms, file_path)
+
+
+def setup_output_directory(protein_path, optimize=False, trim=False, explain=False,
+                          steps=None, fmax=None, radius=None):
+    """Setup and create output directory based on workflow parameters."""
+    output_name = "results"
+    if optimize:
+        output_name += f"_steps_{steps}_fmax{fmax}"
+    if trim:
+        output_name += f"_trim_{radius}A"
+
+    output_dir = Path(protein_path).parent / output_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create subdirectories
+    if optimize:
+        (output_dir / "opt_ligand").mkdir(parents=True, exist_ok=True)
+        (output_dir / "opt_complexes").mkdir(parents=True, exist_ok=True)
+    if explain:
+        (output_dir / "ligand_exp").mkdir(parents=True, exist_ok=True)
+
+    return output_dir
+
+
+def save_results(results, output_dir, args, protein_path, optimization_log, logger):
+    """Save results and optimization logs."""
+    import json
+
+    # Save results summary
+    if output_dir:
+        results_file = output_dir / "results_summary.json"
+
+        successful_results = [r for r in results if 'error' not in r]
+        failed_results = [r for r in results if 'error' in r]
+
+        with open(results_file, 'w') as f:
+            json.dump({
+                'workflow_parameters': {
+                    'protein': str(protein_path),
+                    'ligands_source': args.ligands,
+                    'trim': args.trim,
+                    'trim_radius': args.radius if args.trim else None,
+                    'optimize': args.optimize,
+                    'explain': args.explain,
+                    'optimizer': args.optimizer if args.optimize else None,
+                    'fmax': args.fmax if args.optimize else None,
+                    'steps': args.steps if args.optimize else None
+                },
+                'summary': {
+                    'total_ligands': len(results),
+                    'successful': len(successful_results),
+                    'failed': len(failed_results)
+                },
+                'results': results
+            }, f, indent=2)
+
+        logger.info(f"Results summary saved: {results_file}")
+
+    # Save optimization log
+    if args.opt_log and optimization_log:
+        counter = 1
+        opt_log_file = output_dir / "optimization_log.json"
+        while opt_log_file.exists():
+            opt_log_file = output_dir / f"optimization_log_{counter:03d}.json"
+            counter += 1
+
+        opt_log_data = {
+            'workflow_parameters': {
+                'optimizer': args.optimizer,
+                'fmax': args.fmax,
+                'max_steps': args.steps,
+                'protein': str(protein_path),
+                'ligands_source': args.ligands
+            },
+            'optimizations': optimization_log
+        }
+
+        with open(opt_log_file, 'w') as f:
+            json.dump(opt_log_data, f, indent=2, default=str)
+
+        logger.info(f"Optimization log saved: {opt_log_file}")

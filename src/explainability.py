@@ -111,7 +111,7 @@ def generate_interaction_heatmap(
         plt.Figure: Generated matplotlib figure
     """
     ligand_path = Path(ligand_path)
-
+    print(f"Generating heatmap for ligand: {ligand_path}")
     # Read ligand molecule for visualization
     if ligand_path.suffix.lower() == '.xyz':
         mol = read_xyz_with_bonds(ligand_path)
@@ -237,4 +237,5 @@ def compute_ligand_energy_differences(
     if ligand_differences:
         ligand_differences['Total'] = sum(ligand_differences.values())
 
-    return ligand_differences
+    # convert the arrays to float lists for JSON serialization
+    return {comp: values.tolist() for comp, values in ligand_differences.items()}

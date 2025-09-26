@@ -393,3 +393,180 @@ def extract_ligands(
     print(f"Extracted {len(output_files)} structures to {output_dir}")
 
     return output_files
+
+
+def perform_trimming(protein_path, ligands_source, radius, trim_lig, output_dir, logger):
+    """Handle protein trimming workflow."""
+    from .utils import get_ligand_files
+
+    logger.info("=== TRIMMING PHASE ===")
+
+    # Get representative ligand for trimming
+    if trim_lig:
+        if not Path(trim_lig).exists():
+            raise FileNotFoundError(f"Specified trim ligand not found: {trim_lig}")
+        representative_ligand = trim_lig
+        logger.info(f"Using specified ligand for trimming: {representative_ligand}")
+    else:
+        ligand_files = get_ligand_files(ligands_source, output_dir)
+        if not ligand_files:
+            raise ValueError("No ligand files found")
+        representative_ligand = ligand_files[0]
+        logger.info(f"Using first ligand for trimming: {representative_ligand}")
+
+    # Perform trimming
+    trimmed_protein_path = trim_structure(
+        protein_path, representative_ligand,
+        radius=radius, output_dir=output_dir
+    )
+    logger.info(f"Protein trimmed to {radius}Å radius: {trimmed_protein_path}")
+
+    return trimmed_protein_path
+
+
+def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_dir,
+                    optimization_log, opt_log, logger):
+    """Optimize protein structure."""
+    from .utils import read_structure
+
+    logger.info("Optimizing protein...")
+    protein_atoms = read_structure(working_protein_path)
+
+    protein_path = Path(working_protein_path)
+    output_path = output_dir / f"{protein_path.stem}_opt.xyz"
+
+    optimized_path, opt_info = optimize_structure(
+        protein_atoms, calc,
+        optimizer=optimizer, fmax=fmax, steps=steps,
+        output_path=output_path
+    )
+
+    if opt_log and optimization_log is not None:
+        optimization_log.append({
+            'structure_type': 'protein',
+            'structure_name': protein_path.stem,
+            'optimization_info': opt_info
+        })
+
+    return optimized_path
+
+
+def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger):
+    """Process a single ligand through the workflow."""
+    from .utils import read_structure, write_structure, write_opt_structure
+    from . import protein_ligand_interaction
+
+    ligand_path = Path(ligand_file)
+    ligand_name = ligand_path.stem
+
+    working_ligand_path = ligand_file
+    working_complex_path = None
+
+    try:
+        # Optimize ligand if requested
+        if args.optimize:
+            logger.info(f"Optimizing ligand: {ligand_name}")
+            ligand_atoms = read_structure(ligand_file)
+            working_ligand_path, ligand_opt_info = optimize_structure(
+                ligand_atoms, calc,
+                optimizer=args.optimizer, fmax=args.fmax, steps=args.steps,
+                output_path=output_dir / "opt_ligand" / f"{ligand_name}_opt.xyz"
+            )
+
+            if args.opt_log and optimization_log is not None:
+                optimization_log.append({
+                    'structure_type': 'ligand',
+                    'structure_name': ligand_name,
+                    'optimization_info': ligand_opt_info
+                })
+
+            # Build and optimize complex
+            logger.info(f"Building and optimizing complex: {ligand_name}")
+            protein_atoms = read_structure(working_protein_path)
+            ligand_atoms = read_structure(working_ligand_path)
+            complex_atoms = protein_atoms + ligand_atoms
+
+            working_complex_path, complex_opt_info = optimize_structure(
+                complex_atoms, calc,
+                optimizer=args.optimizer, fmax=args.fmax, steps=args.steps,
+                output_path=output_dir / "opt_complexes" / f"{ligand_name}_complex_opt.xyz",
+                opt_radius=args.opt_radius, n_protein_atoms=len(protein_atoms)
+            )
+
+            if args.opt_log and optimization_log is not None:
+                optimization_log.append({
+                    'structure_type': 'complex',
+                    'structure_name': f"{Path(working_protein_path).stem}_{ligand_name}_complex",
+                    'optimization_info': complex_opt_info
+                })
+
+            # Extract optimized parts
+            optimized_complex_atoms = read_structure(working_complex_path)
+            n_protein_atoms = len(protein_atoms)
+
+            optimized_protein_atoms = optimized_complex_atoms[:n_protein_atoms]
+            optimized_ligand_atoms = optimized_complex_atoms[n_protein_atoms:n_protein_atoms + len(ligand_atoms)]
+
+            # Save optimized parts
+            opt_protein_path = output_dir / f"{Path(working_protein_path).stem}_{ligand_name}_protein_opt.xyz"
+            write_structure(optimized_protein_atoms, opt_protein_path)
+
+            opt_ligand_path = write_opt_structure(
+                optimized_ligand_atoms, "opt_ligand",
+                f"{ligand_name}_from_complex_opt.xyz", output_dir
+            )
+
+            working_protein_path = str(opt_protein_path)
+            working_ligand_path = str(opt_ligand_path)
+
+        # Calculate interaction energy
+        logger.info(f"Calculating interaction energy for: {ligand_name}")
+
+        heatmap_output = None
+        if args.explain:
+            heatmap_output = output_dir / "ligand_exp" / f"{ligand_name}_heatmap.png"
+
+        result_from_calc = protein_ligand_interaction(
+            working_protein_path, working_ligand_path, calc,
+            complex_path=working_complex_path,
+            explainability=args.explain,
+            heatmap_output=heatmap_output,
+            verbose=False
+        )
+
+        # Handle results
+        if args.explain:
+            interaction_energy, analysis = result_from_calc
+        else:
+            interaction_energy = result_from_calc
+            analysis = {}
+
+        result = {
+            'ligand_name': ligand_name,
+            'ligand_file': ligand_file,
+            'working_protein_path': working_protein_path,
+            'working_ligand_path': working_ligand_path,
+            'working_complex_path': working_complex_path,
+            'interaction_energy': interaction_energy,
+            'binding_energy_kcal_mol': interaction_energy * 23.06,
+            'analysis': analysis
+        }
+
+        logger.info(f"  Interaction energy: {interaction_energy:.6f} eV "
+                   f"({interaction_energy * 23.06:.2f} kcal/mol)")
+        if analysis.get('component_totals'):
+            logger.info("  Component contributions:")
+            for comp, total in analysis['component_totals'].items():
+                logger.info(f"    {comp}: {total:.6f} eV")
+
+        return result, None
+
+    except Exception as e:
+        error_result = {
+            'ligand_name': ligand_name,
+            'ligand_file': ligand_file,
+            'error': str(e),
+            'interaction_energy': float('nan'),
+            'binding_energy_kcal_mol': float('nan')
+        }
+        return error_result, str(e)

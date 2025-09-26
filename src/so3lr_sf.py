@@ -10,6 +10,7 @@ import numpy as np
 from pathlib import Path
 from typing import Union, List, Optional, Dict, Any, Tuple
 from ase import Atoms
+from tqdm import tqdm
 
 from .calculator import So3lrSfCalculator
 from .structure_ops import trim_structure, optimize_structure, extract_ligands
@@ -225,11 +226,11 @@ def protein_ligand_interaction(
         n_protein_atoms, n_ligand_atoms
     )
 
-    if ligand_energy_differences:
-        logger.debug("Per-atom energy differences calculated:")
-        for comp, values in ligand_energy_differences.items():
-            total = np.sum(values)
-            logger.debug(f"  {comp}: {total:.6f} eV (sum of {len(values)} atoms)")
+    # if ligand_energy_differences:
+    #     logger.debug("Per-atom energy differences calculated:")
+    #     for comp, values in ligand_energy_differences.items():
+    #         total = np.sum(values)
+    #         logger.debug(f"  {comp}: {total:.6f} eV (sum of {len(values)} atoms)")
 
     # Generate heatmap if requested
     heatmap_path = None
@@ -238,7 +239,7 @@ def protein_ligand_interaction(
         try:
             ligand_name = Path(ligand_path).stem
             title = f"Protein-Ligand Interaction: {ligand_name}"
-
+    
             fig = generate_interaction_heatmap(
                 ligand_path, ligand_energy_differences, heatmap_output, title
             )
@@ -254,27 +255,11 @@ def protein_ligand_interaction(
 
     # Prepare analysis results
     analysis = {
-        'interaction_energy': interaction_energy,
-        'binding_energy_kcal_mol': interaction_energy * 23.06,  # eV to kcal/mol
-        'individual_energies': {
-            'protein': protein_energy,
-            'ligand': ligand_energy,
-            'complex': complex_energy
-        },
         'ligand_energy_differences': ligand_energy_differences,
         'component_totals': {
-            comp: np.sum(values) for comp, values in ligand_energy_differences.items()
+            comp: float(np.sum(values)) for comp, values in ligand_energy_differences.items()
         } if ligand_energy_differences else {},
-        'atom_counts': {
-            'protein': n_protein_atoms,
-            'ligand': n_ligand_atoms,
-            'complex': len(complex_atoms)
-        },
         'heatmap_path': heatmap_path,
-        'input_files': {
-            'protein': str(protein_path),
-            'ligand': str(ligand_path)
-        }
     }
 
     logger.info("Explainability analysis complete")
@@ -347,7 +332,7 @@ def batch_ligand_screening(
     logger.info(f"Screening {len(ligand_files)} ligands...")
 
     results = []
-    for i, ligand_file in enumerate(ligand_files, 1):
+    for i, ligand_file in enumerate(tqdm(ligand_files, desc="Screening ligands"), 1):
         ligand_path = Path(ligand_file)
         ligand_name = ligand_path.stem
 
