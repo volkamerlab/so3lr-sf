@@ -28,7 +28,7 @@ from src import (
     So3lrSfCalculator
 )
 from src.structure_ops import trim_structure, optimize_structure, extract_ligands
-from src.utils import read_structure
+from src.utils import read_structure, write_structure, write_opt_structure
 from src.explainability import generate_interaction_heatmap, compute_ligand_energy_differences
 
 
@@ -117,6 +117,11 @@ Examples:
         default=100,
         help="Maximum optimization steps (default: 100)"
     )
+    parser.add_argument(
+        "--opt-radius",
+        type=float,
+        help="Optimization radius in Angstroms - only atoms within this distance of ligand will be optimized"
+    )
     
     # Model parameters
     parser.add_argument(
@@ -131,87 +136,15 @@ Examples:
         action="store_true",
         help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--opt-log",
+        action="store_true",
+        help="Save optimization details to JSON file"
+    )
 
     return parser
 
 
-def check_optimized_file_exists(original_path: Union[str, Path], output_dir: Optional[Path] = None) -> Optional[str]:
-    """
-    Check if an optimized version of a file already exists.
-
-    Args:
-        original_path: Path to original structure file
-        output_dir: Directory where optimized files are saved
-
-    Returns:
-        Path to existing optimized file, or None if not found
-    """
-    original_path = Path(original_path)
-
-    # Determine where optimized file would be saved
-    if output_dir:
-        optimized_path = output_dir / f"{original_path.stem}_optimized.xyz"
-    else:
-        optimized_path = original_path.parent / f"{original_path.stem}_optimized.xyz"
-
-    if optimized_path.exists():
-        return str(optimized_path)
-    return None
-
-
-def optimize_structure_if_needed(
-    structure_path: Union[str, Path],
-    calculator: Any,
-    output_dir: Optional[Path] = None,
-    skip_existing: bool = True,
-    optimizer: str = "FIRE",
-    fmax: float = 0.05,
-    steps: int = 100,
-    verbose: bool = False
-) -> str:
-    """
-    Optimize structure, skipping if optimized version already exists.
-
-    Args:
-        structure_path: Path to structure to optimize
-        calculator: SO3LR calculator instance
-        output_dir: Output directory for optimized structure
-        skip_existing: Skip if optimized file already exists
-        optimizer: Optimization algorithm
-        fmax: Force convergence criterion
-        steps: Maximum optimization steps
-        verbose: Enable verbose logging
-
-    Returns:
-        Path to optimized structure (existing or newly created)
-    """
-    logger = logging.getLogger(__name__)
-
-    # Check if optimized file already exists
-    if skip_existing:
-        existing_optimized = check_optimized_file_exists(structure_path, output_dir)
-        if existing_optimized:
-            logger.info(f"Optimized file already exists, skipping: {existing_optimized}")
-            return existing_optimized
-
-    # Perform optimization
-    logger.info(f"Optimizing structure: {structure_path}")
-    optimized_path, opt_info = optimize_structure(
-        structure_path,
-        calculator=calculator,
-        optimizer=optimizer,
-        fmax=fmax,
-        steps=steps,
-        output_dir=output_dir
-    )
-
-    if opt_info.get('converged', False):
-        logger.info(f"Optimization converged in {opt_info.get('steps', 0)} steps")
-    else:
-        logger.warning(f"Optimization did not converge after {opt_info.get('steps', 0)} steps")
-
-    logger.info(f"Optimized structure saved: {optimized_path}")
-    return optimized_path
 
 
 def get_ligand_files(ligands_input: str, output_dir: Optional[Path] = None) -> List[str]:
@@ -296,14 +229,17 @@ def main():
         sys.exit(1)
 
     try:
-        # Initialize SO3LR calculator
-        logger.info("Initializing SO3LR calculator...")
+        # Setup calculator kwargs
         calc_kwargs = {}
         if args.explain:
             calc_kwargs['output_per_atom_energy_components'] = True
 
+        # Initialize SO3LR calculator
+        logger.info("Initializing SO3LRSF calculator...")
         calc = So3lrSfCalculator(model_path=args.model_path, **calc_kwargs)
-        logger.info(f"Calculator initialized with model: {calc.model_path}")
+
+        # Initialize optimization log if enabled
+        optimization_log = [] if args.opt_log else None
 
         # Step 1: Handle trimming (if requested)
         working_protein_path = str(protein_path)
@@ -338,26 +274,31 @@ def main():
             working_protein_path = trimmed_protein_path
             logger.info(f"Protein trimmed to {args.radius}Å radius: {working_protein_path}")
 
-            # If only trimming was requested, exit here
-            if not args.optimize and not args.explain:
-                logger.info(f"Trimming complete. Trimmed protein saved: {working_protein_path}")
-                return
-
         # Step 2: Optimization phase
         if args.optimize:
             logger.info("=== OPTIMIZATION PHASE ===")
-
             # Optimize protein first (if requested)
             logger.info("Optimizing protein...")
-            working_protein_path = optimize_structure_if_needed(
-                working_protein_path,
-                calc._calculator,
-                output_dir=output_dir,
+            protein_atoms = read_structure(working_protein_path)
+            working_protein_path, protein_opt_info = optimize_structure(
+                protein_atoms,
+                calc,
                 optimizer=args.optimizer,
                 fmax=args.fmax,
                 steps=args.steps,
-                verbose=args.verbose
+                output_path=output_dir/f"{protein_path.stem}_opt.xyz"
             )
+
+            # Log protein optimization if enabled
+            if args.opt_log:
+                optimization_log.append({
+                    'structure_type': 'protein',
+                    'structure_name': protein_path.stem,
+                    'optimization_info': protein_opt_info
+                })
+            # make the directory for optimized complex and ligands_opt
+            (output_dir / "opt_ligand").mkdir(parents=True, exist_ok=True)
+            (output_dir / "opt_complexes").mkdir(parents=True, exist_ok=True)
 
         # Step 3: Get ligand files and process each
         logger.info("=== LIGAND PROCESSING PHASE ===")
@@ -378,47 +319,52 @@ def main():
                 # Optimize ligand if requested
                 if args.optimize:
                     logger.info(f"Optimizing ligand: {ligand_name}")
-                    working_ligand_path = optimize_structure_if_needed(
-                        ligand_file,
-                        calc._calculator,
-                        output_dir=output_dir,
+                    ligand_atoms = read_structure(ligand_file)
+                    working_ligand_path, ligand_opt_info = optimize_structure(
+                        ligand_atoms,
+                        calc,
                         optimizer=args.optimizer,
                         fmax=args.fmax,
                         steps=args.steps,
-                        verbose=False  # Don't spam logs for each ligand
+                        output_path=output_dir / "opt_ligand" / f"{ligand_name}_opt.xyz"
                     )
+
+                    # Log ligand optimization if enabled
+                    if args.opt_log:
+                        optimization_log.append({
+                            'structure_type': 'ligand',
+                            'structure_name': ligand_name,
+                            'optimization_info': ligand_opt_info
+                        })
 
                 # Build complex and optimize if requested
                 working_complex_path = None
                 if args.optimize:
                     # Create complex by concatenating protein + ligand
-                    logger.info(f"Building complex: {ligand_name}")
+                    logger.info(f"Building and optimizing complex: {ligand_name}")
                     protein_atoms = read_structure(working_protein_path)
                     ligand_atoms = read_structure(working_ligand_path)
                     complex_atoms = protein_atoms + ligand_atoms
 
-                    # Save complex for optimization
-                    complex_filename = f"{protein_path.stem}_{ligand_name}_complex.xyz"
-                    if output_dir:
-                        complex_path = output_dir / complex_filename
-                    else:
-                        complex_path = Path(complex_filename)
-
-                    from src.utils import write_structure
-                    write_structure(complex_atoms, complex_path)
-                    logger.info(f"Complex structure saved: {complex_path}")
-
-                    # Optimize complex
-                    logger.info(f"Optimizing complex: {ligand_name}")
-                    optimized_complex_path = optimize_structure_if_needed(
-                        complex_path,
-                        calc._calculator,
-                        output_dir=output_dir,
+                    # Optimize complex directly (no need to save to file first)
+                    optimized_complex_path, complex_opt_info = optimize_structure(
+                        complex_atoms,
+                        calc,
                         optimizer=args.optimizer,
                         fmax=args.fmax,
                         steps=args.steps,
-                        verbose=False
+                        output_path=output_dir / "opt_complexes" / f"{ligand_name}_complex_opt.xyz",
+                        opt_radius=args.opt_radius,
+                        n_protein_atoms=len(protein_atoms)
                     )
+
+                    # Log complex optimization if enabled
+                    if args.opt_log:
+                        optimization_log.append({
+                            'structure_type': 'complex',
+                            'structure_name': f"{protein_path.stem}_{ligand_name}_complex",
+                            'optimization_info': complex_opt_info
+                        })
 
                     # Store the optimized complex path for energy calculation
                     working_complex_path = optimized_complex_path
@@ -436,15 +382,18 @@ def main():
                     opt_protein_filename = f"{protein_path.stem}_{ligand_name}_protein_opt.xyz"
                     opt_ligand_filename = f"{ligand_name}_from_complex_opt.xyz"
 
+                    # Save protein in main output directory
                     if output_dir:
                         opt_protein_path = output_dir / opt_protein_filename
-                        opt_ligand_path = output_dir / opt_ligand_filename
                     else:
                         opt_protein_path = Path(opt_protein_filename)
-                        opt_ligand_path = Path(opt_ligand_filename)
 
                     write_structure(optimized_protein_atoms, opt_protein_path)
-                    write_structure(optimized_ligand_atoms, opt_ligand_path)
+
+                    # Save ligand in opt_ligand subdirectory
+                    opt_ligand_path = write_opt_structure(
+                        optimized_ligand_atoms, "opt_ligand", opt_ligand_filename, output_dir
+                    )
 
                     working_protein_path = str(opt_protein_path)
                     working_ligand_path = str(opt_ligand_path)
@@ -457,17 +406,25 @@ def main():
                 
                 heatmap_output = output_dir / f"{ligand_name}_heatmap.png"
 
-                # Calculate with explainability
-                interaction_energy, analysis = protein_ligand_interaction(
+                # Calculator is already initialized at the beginning
+
+                # Calculate interaction energy
+                result_from_calc = protein_ligand_interaction(
                     working_protein_path,
                     working_ligand_path,
-                    model_path=args.model_path,
+                    calc,
                     complex_path=working_complex_path,
                     explainability=args.explain,
                     heatmap_output=heatmap_output,
-                    verbose=False,
-                    **calc_kwargs
+                    verbose=False
                 )
+
+                # Handle both explainability and non-explainability cases
+                if args.explain:
+                    interaction_energy, analysis = result_from_calc
+                else:
+                    interaction_energy = result_from_calc
+                    analysis = {}
 
                 result = {
                     'ligand_name': ligand_name,
@@ -582,6 +539,36 @@ def main():
                     }, f, indent=2)
 
                 logger.info(f"Results summary saved: {results_file}")
+
+        # Save optimization log if enabled
+        if args.opt_log and optimization_log:
+            import json
+
+            # Find next available filename with numerical ordering
+            base_name = "optimization_log"
+            counter = 1
+            opt_log_file = output_dir / f"{base_name}.json"
+
+            while opt_log_file.exists():
+                opt_log_file = output_dir / f"{base_name}_{counter:03d}.json"
+                counter += 1
+
+            # Prepare optimization log with metadata
+            opt_log_data = {
+                'workflow_parameters': {
+                    'optimizer': args.optimizer,
+                    'fmax': args.fmax,
+                    'max_steps': args.steps,
+                    'protein': str(protein_path),
+                    'ligands_source': args.ligands
+                },
+                'optimizations': optimization_log
+            }
+
+            with open(opt_log_file, 'w') as f:
+                json.dump(opt_log_data, f, indent=2, default=str)
+
+            logger.info(f"Optimization log saved: {opt_log_file}")
 
         logger.info("SO3LR-SF calculation workflow complete!")
 

@@ -58,24 +58,23 @@ def setup_logging(verbose: bool = False):
 
 def energy_calc_fn(
     structure: Union[str, Path],
-    model_path: Optional[str] = None,
-    verbose: bool = False,
-    **kwargs
+    calc: So3lrSfCalculator,
+    verbose: bool = False
 ) -> float:
     """
     Simple function interface for single energy calculations.
 
     Args:
         structure: Path to structure file or ASE Atoms object
-        model_path: Path to SO3LR model parameters (auto-detected if None)
+        calc: Initialized calculator instance
         verbose: Enable verbose logging
-        **kwargs: Additional calculator parameters
 
     Returns:
         float: Potential energy in eV
 
     Example:
-        >>> energy = energy_calc_fn("molecule.xyz", verbose=True)
+        >>> calc = So3lrSfCalculator()
+        >>> energy = energy_calc_fn("molecule.xyz", calc, verbose=True)
         >>> print(f"Energy: {energy:.3f} eV")
     """
     if verbose:
@@ -84,7 +83,6 @@ def energy_calc_fn(
     logger = logging.getLogger(__name__)
 
     logger.info(f"Calculating energy for structure: {structure}")
-    calc = So3lrSfCalculator(model_path=model_path, **kwargs)
     energy = calc.calculate_energy(structure)
     logger.info(f"Energy calculation complete: {energy:.6f} eV")
 
@@ -94,12 +92,11 @@ def energy_calc_fn(
 def protein_ligand_interaction(
     protein_path: Union[str, Path],
     ligand_path: Union[str, Path],
-    model_path: Optional[str] = None,
+    calc: So3lrSfCalculator,
     complex_path: Optional[Union[str, Path]] = None,
     explainability: bool = False,
     heatmap_output: Optional[Union[str, Path]] = None,
-    verbose: bool = False,
-    **calc_kwargs
+    verbose: bool = False
 ) -> Union[float, Tuple[float, Dict[str, Any]]]:
     """
     Calculate protein-ligand interaction energy with optional explainability.
@@ -110,11 +107,11 @@ def protein_ligand_interaction(
     Args:
         protein_path: Path to protein structure file
         ligand_path: Path to ligand structure file
-        model_path: Path to SO3LR model parameters (auto-detected if None)
+        calc: Initialized calculator instance
+        complex_path: Optional path to pre-built complex structure
         explainability: If True, calculate per-atom energy differences and generate heatmap
         heatmap_output: Path to save heatmap image (only used if explainability=True)
         verbose: Enable verbose logging
-        **calc_kwargs: Additional calculator parameters
 
     Returns:
         float or tuple:
@@ -122,13 +119,14 @@ def protein_ligand_interaction(
             - If explainability=True: (interaction_energy, analysis_dict)
 
     Example:
+        >>> calc = So3lrSfCalculator()
         >>> # Simple interaction energy
-        >>> interaction = protein_ligand_interaction("protein.pdb", "ligand.sdf", verbose=True)
+        >>> interaction = protein_ligand_interaction("protein.pdb", "ligand.sdf", calc, verbose=True)
         >>> print(f"Interaction energy: {interaction:.3f} eV")
         >>>
         >>> # With explainability and heatmap
         >>> interaction, analysis = protein_ligand_interaction(
-        ...     "protein.pdb", "ligand.sdf",
+        ...     "protein.pdb", "ligand.sdf", calc,
         ...     explainability=True,
         ...     heatmap_output="interaction_heatmap.png",
         ...     verbose=True
@@ -142,15 +140,11 @@ def protein_ligand_interaction(
 
     logger.info(f"Protein: {protein_path}")
     logger.info(f"Ligand: {ligand_path}")
+    logger.debug(f"Using calculator with model: {calc.model_path}")
 
-    # Enable per-atom components if explainability is requested
-    if explainability:
-        calc_kwargs['output_per_atom_energy_components'] = True
-        logger.debug("Per-atom energy components enabled for explainability")
-
-    # Create calculator
-    calc = So3lrSfCalculator(model_path=model_path, **calc_kwargs)
-    logger.debug(f"Calculator initialized with model: {calc.model_path}")
+    # Check if per-atom components are needed for explainability
+    if explainability and not calc.output_per_atom_energy_components:
+        logger.warning("Explainability requested but calculator was not initialized with output_per_atom_energy_components=True")
 
     # Read structures
     logger.debug("Reading protein structure...")
@@ -174,12 +168,6 @@ def protein_ligand_interaction(
 
         if len(complex_atoms) != n_protein_atoms + n_ligand_atoms:
             logger.warning(f"Complex atom count ({len(complex_atoms)}) != protein ({n_protein_atoms}) + ligand ({n_ligand_atoms})")
-
-        # Extract parts from complex to ensure consistent ordering
-        protein_atoms = complex_atoms[:n_protein_atoms]
-        ligand_atoms = complex_atoms[n_protein_atoms:n_protein_atoms + n_ligand_atoms]
-
-        logger.info(f"Extracted from complex - Protein: {len(protein_atoms)}, Ligand: {len(ligand_atoms)}")
     else:
         logger.debug("Creating complex by concatenating protein and ligand")
         # complex_atoms concatenate protein and ligand
@@ -187,6 +175,7 @@ def protein_ligand_interaction(
         positions = np.concatenate((protein_atoms.get_positions(), ligand_atoms.get_positions()),  axis=0)
         complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
         logger.debug(f"Complex created: {len(complex_atoms)} total atoms")
+        
 
     logger.info("Calculating protein energy...")    
     logger.debug(f"Protein atoms shape: positions={protein_atoms.get_positions().shape}, atomic_numbers={len(protein_atoms.get_atomic_numbers())}")
@@ -295,11 +284,10 @@ def protein_ligand_interaction(
 def batch_ligand_screening(
     protein_path: Union[str, Path],
     ligands_file_or_dir: Union[str, Path],
+    calc: So3lrSfCalculator,
     output_dir: Optional[Union[str, Path]] = None,
-    model_path: Optional[str] = None,
     explainability: bool = False,
-    verbose: bool = False,
-    **calc_kwargs
+    verbose: bool = False
 ) -> List[Dict[str, Any]]:
     """
     Screen multiple ligands against a protein with batch processing.
@@ -307,18 +295,18 @@ def batch_ligand_screening(
     Args:
         protein_path: Path to protein structure
         ligands_file_or_dir: Path to multi-structure file (SDF) or directory with ligand files
+        calc: Initialized calculator instance
         output_dir: Directory to save results and heatmaps
-        model_path: Path to SO3LR model parameters
         explainability: Whether to generate explainability analysis for each ligand
         verbose: Enable verbose logging
-        **calc_kwargs: Additional calculator parameters
 
     Returns:
         List[Dict]: Results for each ligand with interaction energies and analysis
 
     Example:
+        >>> calc = So3lrSfCalculator()
         >>> results = batch_ligand_screening(
-        ...     "protein.pdb", "ligands.sdf", "results/",
+        ...     "protein.pdb", "ligands.sdf", calc, "results/",
         ...     explainability=True, verbose=True
         ... )
         >>> # Sort by binding affinity
@@ -374,9 +362,9 @@ def batch_ligand_screening(
             # Calculate interaction
             if explainability:
                 interaction_energy, analysis = protein_ligand_interaction(
-                    protein_path, ligand_file, model_path,
+                    protein_path, ligand_file, calc,
                     explainability=explainability, heatmap_output=heatmap_output,
-                    verbose=False, **calc_kwargs  # Don't spam logs for each ligand
+                    verbose=False  # Don't spam logs for each ligand
                 )
 
                 result = {
@@ -387,8 +375,8 @@ def batch_ligand_screening(
                 }
             else:
                 interaction_energy = protein_ligand_interaction(
-                    protein_path, ligand_file, model_path,
-                    explainability=False, verbose=False, **calc_kwargs
+                    protein_path, ligand_file, calc,
+                    explainability=False, verbose=False
                 )
 
                 result = {
@@ -428,8 +416,8 @@ def batch_ligand_screening(
 def trim_and_calculate(
     protein_path: Union[str, Path],
     ligand_path: Union[str, Path],
+    calc: So3lrSfCalculator,
     radius: float = 10.0,
-    model_path: Optional[str] = None,
     output_dir: Optional[Union[str, Path]] = None,
     verbose: bool = False,
     **kwargs
@@ -440,8 +428,8 @@ def trim_and_calculate(
     Args:
         protein_path: Path to protein structure
         ligand_path: Path to ligand structure
+        calc: Initialized calculator instance
         radius: Trimming radius in Angstroms
-        model_path: SO3LR model path
         output_dir: Output directory for trimmed structure
         verbose: Enable verbose logging
         **kwargs: Additional arguments for protein_ligand_interaction
@@ -460,7 +448,7 @@ def trim_and_calculate(
 
     logger.info("Calculating interaction energy with trimmed protein...")
     interaction_energy = protein_ligand_interaction(
-        trimmed_protein_path, ligand_path, model_path, verbose=verbose, **kwargs
+        trimmed_protein_path, ligand_path, calc, verbose=verbose, **kwargs
     )
 
     return interaction_energy, trimmed_protein_path
@@ -468,7 +456,7 @@ def trim_and_calculate(
 
 def optimize_and_calculate(
     structure_path: Union[str, Path],
-    model_path: Optional[str] = None,
+    calc: So3lrSfCalculator,
     output_dir: Optional[Union[str, Path]] = None,
     verbose: bool = False,
     **kwargs
@@ -478,7 +466,7 @@ def optimize_and_calculate(
 
     Args:
         structure_path: Path to structure to optimize
-        model_path: SO3LR model path
+        calc: Initialized calculator instance
         output_dir: Output directory for optimized structure
         verbose: Enable verbose logging
         **kwargs: Additional arguments for optimize_structure
@@ -490,8 +478,6 @@ def optimize_and_calculate(
         setup_logging(verbose=True)
 
     logger = logging.getLogger(__name__)
-
-    calc = So3lrSfCalculator(model_path=model_path)
 
     logger.info(f"Optimizing structure: {structure_path}")
     optimized_path, opt_info = optimize_structure(

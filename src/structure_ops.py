@@ -10,8 +10,11 @@ from pathlib import Path
 from typing import Union, Tuple, Optional, Dict, Any, List
 from ase import Atoms
 from ase.optimize import FIRE, LBFGS
+from ase.neighborlist import neighbor_list
+from ase.constraints import FixAtoms
 
 from .utils import read_structure, write_structure, validate_structure
+from .calculator import So3lrSfCalculator
 
 
 def trim_structure(
@@ -101,29 +104,77 @@ def trim_structure(
     return output_path
 
 
+def create_optimization_constraint(
+    complex_atoms: Atoms,
+    n_protein_atoms: int,
+    opt_radius: float
+):
+    """
+    Create constraint for selective optimization based on distance from ligand.
+
+    Args:
+        complex_atoms: Combined protein+ligand atoms object
+        n_protein_atoms: Number of protein atoms (ligand starts after this index)
+        opt_radius: Radius in Angstroms for optimization cutoff
+
+    Returns:
+        FixAtoms constraint object or None if no atoms to fix
+    """
+    n_prot = n_protein_atoms
+    n_lig = len(complex_atoms) - n_protein_atoms
+
+    # Define atom indices
+    protein_idx = np.arange(n_prot)
+    ligand_idx = np.arange(n_prot, n_prot + n_lig)
+
+    # Get all pairs (i -> central atom, j -> neighbor) and distances
+    i, j, d = neighbor_list('ijd', complex_atoms, opt_radius)
+
+    # Find protein atoms within cutoff of any ligand atom
+    mask = np.isin(i, ligand_idx) & (j < n_prot)
+    flexible_protein = np.unique(j[mask])
+
+    # Fixed atoms are protein atoms NOT within the flexible region
+    fixed_protein_idx = np.setdiff1d(protein_idx, flexible_protein)
+
+    if len(fixed_protein_idx) > 0:
+        print(f"Optimization constraints:")
+        print(f"  Flexible protein atoms: {len(flexible_protein)}/{n_prot}")
+        print(f"  Fixed protein atoms: {len(fixed_protein_idx)}")
+        print(f"  Ligand atoms (always flexible): {n_lig}")
+
+        return FixAtoms(indices=fixed_protein_idx.tolist())
+    else:
+        print(f"All protein atoms within {opt_radius}Å of ligand - no constraints applied")
+        return None
+
+
 def optimize_structure(
-    structure_path: Union[str, Path],
+    atoms: Atoms,
+    calc: So3lrSfCalculator,
     optimizer: str = 'FIRE',
     fmax: float = 0.01,
     steps: int = 1000,
-    output_dir: Optional[Union[str, Path]] = None,
-    calculator = None
+    output_path: Optional[Union[str, Path]] = None,
+    opt_radius: Optional[float] = None,
+    n_protein_atoms: Optional[int] = None
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Optimize molecular structure and save as XYZ file.
 
-    This function reads a structure file, optimizes it using the provided calculator,
-    and saves the optimized structure as an XYZ file. This is a preprocessing step
-    that happens before energy calculations. The structure is always saved regardless
-    of convergence status.
+    This function accepts an ASE Atoms object, optimizes it using the provided
+    calculator, and saves the optimized structure as an XYZ file. The structure
+    is always saved regardless of convergence status.
 
     Args:
-        structure_path: Path to input structure file (any format supported by ASE)
+        atoms: ASE Atoms object to optimize
+        calc: So3lrSfCalculator instance to use for optimization
         optimizer: Optimization algorithm ('FIRE' or 'LBFGS')
         fmax: Force convergence criterion in eV/Angstrom (default: 0.01)
         steps: Maximum number of optimization steps (default: 1000)
-        output_dir: Directory to save optimized structure (default: same as input)
-        calculator: ASE calculator instance to use for optimization
+        output_path: Path for output file
+        opt_radius: Optional radius for selective optimization around ligand
+        n_protein_atoms: Number of protein atoms (required if opt_radius is used)
 
     Returns:
         tuple: (output_xyz_path, optimization_info)
@@ -135,37 +186,31 @@ def optimize_structure(
         RuntimeError: If optimization encounters serious errors
 
     Example:
-        >>> from .calculator import So3lrSfCalculator
         >>> calc = So3lrSfCalculator()
-        >>>
-        >>> # Optimize structure before energy calculation
-        >>> opt_path, info = optimize_structure("protein.pdb", calculator=calc._calculator)
-        >>> print(f"Optimized structure saved to: {opt_path}")
-        >>> print(f"Converged: {info['converged']}")
-        >>>
-        >>> # Now calculate energy from optimized structure
-        >>> energy = calc.calculate_energy(opt_path)
+        >>> atoms = read_structure("ligand.xyz")
+        >>> opt_path, info = optimize_structure(atoms, calc, output_filename="ligand_opt.xyz")
     """
-    if calculator is None:
-        raise ValueError("Calculator must be provided for structure optimization")
 
-    structure_path = Path(structure_path)
+    # Validate input atoms
+    validate_structure(atoms)
 
     # Set output directory
-    if output_dir is None:
-        output_dir = structure_path.parent
-    else:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Read initial structure
-    atoms = read_structure(structure_path)
-    validate_structure(atoms)
+    if output_path.is_file():
+        # return the path if it's already a file
+        return str(output_path), {'output_file': output_path, 'existing_file': True}
 
     initial_positions = atoms.positions.copy()
 
-    # Set calculator
-    atoms.calc = calculator
+    # Create and apply constraint if opt_radius is provided
+    constraint = None
+    if opt_radius is not None and n_protein_atoms is not None:
+        constraint = create_optimization_constraint(atoms, n_protein_atoms, opt_radius)
+
+
+
+    # Use provided So3lrSfCalculator - let it handle fresh initialization
+    calc._init_calculator()
+    atoms.calc = calc._calculator
 
     # Calculate initial energy for comparison
     try:
@@ -173,6 +218,9 @@ def optimize_structure(
     except Exception as e:
         raise RuntimeError(f"Failed to calculate initial energy: {e}")
 
+    if constraint is not None:
+        atoms.set_constraint(constraint)
+        
     # Choose and configure optimizer
     if optimizer.upper() == 'FIRE':
         opt = FIRE(atoms, logfile=None)
@@ -188,7 +236,7 @@ def optimize_structure(
 
     try:
         opt.run(fmax=fmax, steps=steps)
-        converged = opt.converged()
+        converged = opt.converged
         nsteps = opt.nsteps
     except Exception as e:
         optimization_error = str(e)
@@ -207,20 +255,53 @@ def optimize_structure(
     max_displacement = np.max(displacement)
     rms_displacement = np.sqrt(np.mean(displacement**2))
 
-    # Create output XYZ filename
-    output_filename = f"{structure_path.stem}_optimized.xyz"
-    output_path = output_dir / output_filename
-
     # Save optimized structure as XYZ (always save, even if not converged)
     try:
         output_path_str = write_structure(atoms, output_path)
     except Exception as e:
         raise RuntimeError(f"Failed to save optimized structure: {e}")
 
+    # Prepare constraint information
+    constraint_info = {
+        'constraint_applied': constraint is not None,
+        'constraint_type': type(constraint).__name__ if constraint is not None else None
+    }
+
+    # Add detailed constraint information if constraint was applied
+    if constraint is not None and opt_radius is not None:
+        # Extract constraint details
+        n_prot = n_protein_atoms
+        n_lig = len(atoms) - n_protein_atoms
+
+        # Get flexible and fixed atom counts from constraint
+        fixed_atoms = constraint.index if hasattr(constraint, 'index') else []
+        n_fixed = len(fixed_atoms)
+        n_flexible_protein = n_prot - n_fixed
+
+        constraint_info.update({
+            'optimization_radius': opt_radius,
+            'total_protein_atoms': n_prot,
+            'total_ligand_atoms': n_lig,
+            'flexible_protein_atoms': n_flexible_protein,
+            'fixed_protein_atoms': n_fixed,
+            'ligand_atoms_always_flexible': n_lig,
+            'constraint_details': f"{n_flexible_protein}/{n_prot} protein atoms flexible within {opt_radius}Å of ligand"
+        })
+
+    # Calculate force information if possible
+    initial_forces_max = None
+    final_forces_max = None
+    try:
+        final_forces = atoms.get_forces()
+        final_forces_max = np.max(np.linalg.norm(final_forces, axis=1))
+    except:
+        pass
+
     # Prepare optimization information
     opt_info = {
-        'converged': converged,
+        'converged': "yes" if converged else "no",
         'steps': nsteps,
+        'steps_taken': nsteps,  # Duplicate for clarity in logs
         'initial_energy': initial_energy,
         'final_energy': final_energy,
         'energy_change': final_energy - initial_energy,
@@ -228,9 +309,15 @@ def optimize_structure(
         'rms_displacement': rms_displacement,
         'optimizer': optimizer,
         'fmax_criterion': fmax,
-        'input_file': str(structure_path),
+        'max_steps_allowed': steps,
         'output_file': output_path_str,
-        'optimization_error': optimization_error
+        'optimization_error': optimization_error,
+        'constraint_info': constraint_info,
+        'structure_info': {
+            'total_atoms': len(atoms),
+            'initial_forces_max': initial_forces_max,
+            'final_forces_max': final_forces_max
+        }
     }
 
     # Print status

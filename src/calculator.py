@@ -92,7 +92,7 @@ class So3lrSfCalculator:
             # Temporarily suppress JAX/checkpoint/MLFF logging
             loggers_to_suppress = [
                 logging.getLogger('jax'),
-                logging.getLogger('MLFF'),
+                # logging.getLogger('MLFF'),
                 logging.getLogger('orbax'),
                 logging.getLogger('checkpoint'),
                 logging.getLogger('so3lr'),
@@ -153,6 +153,9 @@ class So3lrSfCalculator:
             atoms = read_structure(atoms)
 
         validate_structure(atoms)
+
+        # Re-initialize calculator for fresh calculation
+        self._init_calculator()
 
         # Set calculator and compute energy
         atoms.calc = self._calculator

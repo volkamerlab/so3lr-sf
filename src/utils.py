@@ -178,3 +178,51 @@ def validate_structure(atoms: Atoms) -> bool:
         raise ValueError("Structure contains invalid (NaN or infinite) coordinates")
 
     return True
+
+
+def write_opt_structure(
+    atoms: Atoms,
+    structure_type: str,
+    filename: str,
+    output_dir: Optional[Union[str, Path]] = None
+) -> str:
+    """
+    Save structure in organized subdirectories based on structure type.
+
+    Creates subdirectories dynamically based on structure type and saves files there.
+
+    Args:
+        atoms: ASE Atoms object to save
+        structure_type: Type of structure ('complex', 'opt_ligand', 'protein', etc.)
+        filename: Name for the output file (with extension)
+        output_dir: Base output directory (default: current directory)
+
+    Returns:
+        str: Full path to saved file
+
+    Example:
+        >>> # Save complex structure
+        >>> path = write_opt_structure(
+        ...     complex_atoms, "complex",
+        ...     "alanine_water_complex.xyz", "results/"
+        ... )
+        >>>
+        >>> # Save optimized ligand
+        >>> path = write_opt_structure(
+        ...     ligand_atoms, "opt_ligand",
+        ...     "water_optimized.xyz", "results/"
+        ... )
+    """
+    # Set up base directory
+    if output_dir is None:
+        base_dir = Path(".")
+    else:
+        base_dir = Path(output_dir)
+
+    # Create subdirectory based on structure type
+    type_dir = base_dir / structure_type
+    type_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create full path and save
+    file_path = type_dir / filename
+    return write_structure(atoms, file_path)
