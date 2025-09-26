@@ -57,8 +57,8 @@ from .explainability import (
 
 # Package metadata
 __version__ = "1.0.0"
-__author__ = "SO3LR-SF Development Team"
-__description__ = "SO3 Long-Range Structure and Force Calculator with Explainability"
+# __author__ = ""
+# __description__ = "SO3LR-SF"
 
 # Main interface functions
 __all__ = [

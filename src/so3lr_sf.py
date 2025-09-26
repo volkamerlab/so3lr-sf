@@ -9,6 +9,7 @@ import logging
 import numpy as np
 from pathlib import Path
 from typing import Union, List, Optional, Dict, Any, Tuple
+from ase import Atoms
 
 from .calculator import So3lrSfCalculator
 from .structure_ops import trim_structure, optimize_structure, extract_ligands
@@ -21,14 +22,38 @@ def setup_logging(verbose: bool = False):
     Setup logging configuration.
 
     Args:
-        verbose: If True, set logging level to DEBUG, otherwise INFO
+        verbose: If True, set logging level to DEBUG for our modules, otherwise INFO
     """
-    level = logging.DEBUG if verbose else logging.INFO
+    # Clear any existing handlers to avoid conflicts
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    # Set root logger to INFO to prevent spam from other libraries
     logging.basicConfig(
-        level=level,
+        level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%H:%M:%S'
+        datefmt='%m-%d %H:%M:%S',
+        force=True
     )
+
+    # Set our application loggers to DEBUG if verbose is requested
+    if verbose:
+        our_loggers = [
+            logging.getLogger('src'),
+            logging.getLogger('__main__'),
+            logging.getLogger('run_so3lr_sf')
+        ]
+        for logger in our_loggers:
+            logger.setLevel(logging.DEBUG)
+
+    # Suppress verbose external libraries
+    external_loggers = [
+        'jax', 'MLFF', 'orbax', 'checkpoint', 'so3lr',
+        'jax._src', 'jax._src.cache_key', 'jax._src.compiler',
+        'jax._src.xla_bridge', 'absl'
+    ]
+    for logger_name in external_loggers:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 def energy_calc_fn(
@@ -70,6 +95,7 @@ def protein_ligand_interaction(
     protein_path: Union[str, Path],
     ligand_path: Union[str, Path],
     model_path: Optional[str] = None,
+    complex_path: Optional[Union[str, Path]] = None,
     explainability: bool = False,
     heatmap_output: Optional[Union[str, Path]] = None,
     verbose: bool = False,
@@ -114,10 +140,8 @@ def protein_ligand_interaction(
 
     logger = logging.getLogger(__name__)
 
-    logger.info(f"Starting protein-ligand interaction calculation")
     logger.info(f"Protein: {protein_path}")
     logger.info(f"Ligand: {ligand_path}")
-    logger.info(f"Explainability: {explainability}")
 
     # Enable per-atom components if explainability is requested
     if explainability:
@@ -137,11 +161,35 @@ def protein_ligand_interaction(
     ligand_atoms = read_structure(ligand_path)
     logger.debug(f"Ligand loaded: {len(ligand_atoms)} atoms")
 
-    # Create complex by concatenating protein and ligand
-    complex_atoms = protein_atoms + ligand_atoms
-    logger.debug(f"Complex created: {len(complex_atoms)} total atoms")
+    # Use provided complex or create by concatenating protein and ligand
+    if complex_path:
+        logger.info(f"Using pre-built complex from: {complex_path}")
+        complex_atoms = read_structure(complex_path)
+        logger.info(f"Complex loaded: {len(complex_atoms)} total atoms")
 
-    logger.info("Calculating protein energy...")
+        # When using pre-built complex, extract protein and ligand parts from it
+        # to ensure consistent atom ordering with the complex
+        n_protein_atoms = len(protein_atoms)
+        n_ligand_atoms = len(ligand_atoms)
+
+        if len(complex_atoms) != n_protein_atoms + n_ligand_atoms:
+            logger.warning(f"Complex atom count ({len(complex_atoms)}) != protein ({n_protein_atoms}) + ligand ({n_ligand_atoms})")
+
+        # Extract parts from complex to ensure consistent ordering
+        protein_atoms = complex_atoms[:n_protein_atoms]
+        ligand_atoms = complex_atoms[n_protein_atoms:n_protein_atoms + n_ligand_atoms]
+
+        logger.info(f"Extracted from complex - Protein: {len(protein_atoms)}, Ligand: {len(ligand_atoms)}")
+    else:
+        logger.debug("Creating complex by concatenating protein and ligand")
+        # complex_atoms concatenate protein and ligand
+        atomic_numbers = np.concatenate((protein_atoms.get_atomic_numbers(), ligand_atoms.get_atomic_numbers()),  axis=None)
+        positions = np.concatenate((protein_atoms.get_positions(), ligand_atoms.get_positions()),  axis=0)
+        complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
+        logger.debug(f"Complex created: {len(complex_atoms)} total atoms")
+
+    logger.info("Calculating protein energy...")    
+    logger.debug(f"Protein atoms shape: positions={protein_atoms.get_positions().shape}, atomic_numbers={len(protein_atoms.get_atomic_numbers())}")
     protein_energy = calc.calculate_energy(protein_atoms)
     logger.debug(f"Protein energy: {protein_energy:.6f} eV")
     protein_components = None
@@ -327,7 +375,7 @@ def batch_ligand_screening(
             if explainability:
                 interaction_energy, analysis = protein_ligand_interaction(
                     protein_path, ligand_file, model_path,
-                    explainability=True, heatmap_output=heatmap_output,
+                    explainability=explainability, heatmap_output=heatmap_output,
                     verbose=False, **calc_kwargs  # Don't spam logs for each ligand
                 )
 
@@ -407,7 +455,7 @@ def trim_and_calculate(
     logger = logging.getLogger(__name__)
 
     logger.info(f"Trimming protein to {radius}Å around ligand...")
-    trimmed_protein_path, _ = trim_structure(protein_path, ligand_path, radius, output_dir)
+    trimmed_protein_path = trim_structure(protein_path, ligand_path, radius, output_dir)
     logger.info(f"Trimmed protein saved: {trimmed_protein_path}")
 
     logger.info("Calculating interaction energy with trimmed protein...")

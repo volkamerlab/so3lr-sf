@@ -98,7 +98,7 @@ def trim_structure(
 
     print(f"Trimmed protein ({len(trimmed_protein)} atoms) saved to: {output_path}")
 
-    return output_path, str(ligand_path)
+    return output_path
 
 
 def optimize_structure(

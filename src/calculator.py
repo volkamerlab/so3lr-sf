@@ -87,15 +87,41 @@ class So3lrSfCalculator:
             RuntimeError: If calculator initialization fails
         """
         try:
-            self._calculator = mlffCalculatorSparse.create_from_ckpt_dir(
-                ckpt_dir=self.model_path,
-                lr_cutoff=self.lr_cutoff,
-                dispersion_energy_lr_cutoff_damping=self.dispersion_energy_lr_cutoff_damping,
-                from_file=False,
-                calculate_stress=False,  # We don't need stress calculations
-                dtype=self.dtype,
-                output_per_atom_energy_components=self.output_per_atom_energy_components
-            )
+            import logging
+
+            # Temporarily suppress JAX/checkpoint/MLFF logging
+            loggers_to_suppress = [
+                logging.getLogger('jax'),
+                logging.getLogger('MLFF'),
+                logging.getLogger('orbax'),
+                logging.getLogger('checkpoint'),
+                logging.getLogger('so3lr'),
+                logging.getLogger('jax._src'),
+                logging.getLogger('jax._src.cache_key'),
+                logging.getLogger('jax._src.compiler'),
+                logging.getLogger('jax._src.xla_bridge'),
+                logging.getLogger('absl')
+            ]
+
+            original_levels = {}
+            for logger in loggers_to_suppress:
+                original_levels[logger] = logger.level
+                logger.setLevel(logging.CRITICAL)  # Even more restrictive
+
+            try:
+                self._calculator = mlffCalculatorSparse.create_from_ckpt_dir(
+                    ckpt_dir=self.model_path,
+                    lr_cutoff=self.lr_cutoff,
+                    dispersion_energy_lr_cutoff_damping=self.dispersion_energy_lr_cutoff_damping,
+                    from_file=False,
+                    calculate_stress=False,  # We don't need stress calculations
+                    dtype=self.dtype,
+                    output_per_atom_energy_components=self.output_per_atom_energy_components
+                )
+            finally:
+                # Restore original logging levels
+                for logger, level in original_levels.items():
+                    logger.setLevel(level)
         except Exception as e:
             raise RuntimeError(f"Failed to initialize SO3LR calculator: {e}")
 
