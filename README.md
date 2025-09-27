@@ -52,7 +52,7 @@ python run_so3lr_sf.py --protein protein.pdb --ligands ligands.sdf \
 from src import So3lrSfCalculator, protein_ligand_interaction
 
 # Initialize calculator
-calc = So3lrSfCalculator(output_per_atom_energy_components=True)
+calc = So3lrSfCalculator()
 
 # Simple interaction energy
 interaction_energy = protein_ligand_interaction(
@@ -213,34 +213,6 @@ src/
 ├── utils.py                # Utility functions and I/O operations
 └── __init__.py            # Package interface
 ```
-
-## 🔬 Scientific Background
-
-SO3LR-SF implements the SO3LR machine learning force field approach for accurate and efficient calculation of protein-ligand interactions. The method provides:
-
-- **High Accuracy**: Comparable to DFT calculations
-- **Computational Efficiency**: Orders of magnitude faster than quantum methods
-- **Explainability**: Per-atom energy decomposition for understanding protein-ligand binding mechanisms
-- **Transferability**: Trained on diverse chemical systems
-
-### Energy Components
-- **MLFF**: SO3krates machine learning force field contribution
-- **ZBL**: Ziegler Biersack Lietmer repulsion
-- **Electrostatics**: Long-range electrostatic interactions
-- **Dispersion**: Quantum drude oscillator dispersion forces
-
-## 📈 Performance & Scalability
-
-### System Requirements
-- **Python**: 3.8+
-- **Memory**: 4GB+ RAM recommended
-- **Storage**: 1GB+ for model parameters
-- **GPU**: Optional, CPU-only execution supported
-
-### Scaling Characteristics
-- **Protein size**: Linear scaling up to ~10,000 atoms
-- **Ligand screening**: Embarrassingly parallel
-- **Optimization**: Converges efficiently with FIRE/LBFGS
 
 ## 🤝 Contributing
 
