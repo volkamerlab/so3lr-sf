@@ -1,0 +1,32 @@
+[run]
+source = src
+omit =
+    src/__pycache__/*
+    */tests/*
+    */test_*
+    setup.py
+    */conftest.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    if settings.DEBUG
+    raise AssertionError
+    raise NotImplementedError
+    if 0:
+    if __name__ == .__main__.:
+    class .*\bProtocol\):
+    @(abc\.)?abstractmethod
+
+show_missing = true
+precision = 2
+fail_under = 85
+
+[html]
+directory = htmlcov
+title = SO3LR-SF Test Coverage Report
+
+[xml]
+output = coverage.xml

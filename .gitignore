@@ -1,0 +1,14 @@
+so3lr/
+example_so3lr_per_atom_energies.py
+*.ini
+*/_*
+src/__pycache_*
+_*
+tests/test_data/*/
+
+# Coverage reports
+coverage.xml
+htmlcov/
+.coverage
+*.cover
+.pytest_cache/
