@@ -415,3 +415,42 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
             json.dump(opt_log_data, f, indent=2, default=str)
 
         logger.info(f"Optimization log saved: {opt_log_file}")
+
+
+def setup_logging(verbose: bool = False):
+    """
+    Setup logging configuration.
+
+    Args:
+        verbose: If True, set logging level to DEBUG for our modules, otherwise INFO
+    """
+    # Clear any existing handlers to avoid conflicts
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    # Set root logger to INFO to prevent spam from other libraries
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%m-%d %H:%M:%S',
+        force=True
+    )
+
+    # Set our application loggers to DEBUG if verbose is requested
+    if verbose:
+        our_loggers = [
+            logging.getLogger('src'),
+            logging.getLogger('__main__'),
+            logging.getLogger('run_so3lr_sf')
+        ]
+        for logger in our_loggers:
+            logger.setLevel(logging.DEBUG)
+
+    # Suppress verbose external libraries
+    external_loggers = [
+        'jax', 'MLFF', 'orbax', 'checkpoint', 'so3lr',
+        'jax._src', 'jax._src.cache_key', 'jax._src.compiler',
+        'jax._src.xla_bridge', 'absl'
+    ]
+    for logger_name in external_loggers:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)

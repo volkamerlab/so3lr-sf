@@ -25,14 +25,12 @@ Example:
 """
 
 # Import main functions and classes
-from .so3lr_sf import (
-    energy_calc_fn,
+from .interaction_energy import (
+    # energy_calc_fn,
     protein_ligand_interaction,
-    batch_ligand_screening,
-    trim_and_calculate,
-    optimize_and_calculate,
-    setup_logging
 )
+
+from .utils import setup_logging
 
 from .calculator import So3lrSfCalculator
 
@@ -66,8 +64,6 @@ __all__ = [
     'energy_calc_fn',
     'protein_ligand_interaction',
     'batch_ligand_screening',
-    'trim_and_calculate',
-    'optimize_and_calculate',
     'setup_logging',
 
     # Core classes

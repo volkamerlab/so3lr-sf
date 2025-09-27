@@ -454,7 +454,7 @@ def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_
 def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger):
     """Process a single ligand through the workflow."""
     from .utils import read_structure, write_structure, write_opt_structure
-    from . import protein_ligand_interaction
+    from .interaction_energy import protein_ligand_interaction
 
     ligand_path = Path(ligand_file)
     ligand_name = ligand_path.stem
