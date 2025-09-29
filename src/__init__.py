@@ -41,7 +41,6 @@ from .structure_ops import (
 )
 
 from .utils import (
-    find_so3lr_params,
     read_structure,
     write_structure,
     get_supported_formats,
@@ -75,7 +74,6 @@ __all__ = [
     'extract_ligands',
 
     # Utilities
-    'find_so3lr_params',
     'read_structure',
     'write_structure',
     'get_supported_formats',

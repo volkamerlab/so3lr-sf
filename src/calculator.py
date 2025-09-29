@@ -131,7 +131,7 @@ class So3lrSfCalculator:
 
         Args:
             atoms: Molecular structure as ASE Atoms object or path to structure file
-                  Supported formats: .xyz, .pdb, .sdf, .mol2, and others supported by ASE
+                  Supported formats: .xyz, .pdb, .sdf, and others supported by ASE
 
         Returns:
             float: Total potential energy in eV

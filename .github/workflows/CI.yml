@@ -1,0 +1,114 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  # Allows to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.12']
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for better coverage
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache Poetry dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: poetry-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: |
+          poetry install --with test
+
+      - name: Run tests with coverage
+        run: |
+          poetry run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json --cov-fail-under=85 -v
+
+      - name: Generate coverage badge
+        run: |
+          poetry run coverage-badge -o coverage.svg -f
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            htmlcov/
+            coverage.xml
+            coverage.json
+            coverage.svg
+          retention-days: 30
+
+  coverage-report:
+    needs: test
+    runs-on: ubuntu-latest
+    if: always()  # Run on both push and PR
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report-ubuntu-latest-py3.12
+
+      - name: Coverage comment (PR only)
+        if: github.event_name == 'pull_request'
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          COVERAGE_PATH: coverage.xml
+
+      - name: Coverage summary (Push)
+        if: github.event_name == 'push'
+        run: |
+          echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.attrib.get('line-rate', 0)) * 100
+          branch_rate = float(root.attrib.get('branch-rate', 0)) * 100
+          print(f'**Line Coverage:** {line_rate:.2f}%')
+          print(f'**Branch Coverage:** {branch_rate:.2f}%')
+          print(f'**Status:** {'✅ PASS' if line_rate >= 85 else '❌ FAIL (< 85%)'}')
+          " >> $GITHUB_STEP_SUMMARY

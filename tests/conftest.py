@@ -7,26 +7,34 @@ import sys
 import tempfile
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 import numpy as np
 
-# Mock heavy dependencies BEFORE any imports
-sys.modules['jax'] = Mock()
-sys.modules['jax.numpy'] = Mock()
-sys.modules['mlff'] = Mock()
-sys.modules['mlff.md'] = Mock()
-sys.modules['mlff.md.calculator_sparse'] = Mock()
+# Note: Heavy dependencies are now mocked only when needed via fixtures
 
 # Create a mock calculator class
 class MockSo3lrSfCalculator:
     def __init__(self, *args, **kwargs):
         self.output_per_atom_energy_components = kwargs.get('output_per_atom_energy_components', False)
         self.model_path = kwargs.get('model_path', '/mock/model/path')
+        self.lr_cutoff = kwargs.get('lr_cutoff', 12.0)
+        self.dtype = kwargs.get('dtype', np.float32)
+        self._calculator = Mock()
+
+        # Configure mock calculator for ASE compatibility
+        self._calculator.results = {}
+        # Make get_potential_energy return a float instead of Mock
+        self._calculator.get_potential_energy = Mock(return_value=-100.0)
 
     def calculate_energy(self, atoms):
+        """Mock calculate_energy that always returns -100.0."""
         return -100.0
 
     def get_per_atom_energy_components(self):
+        """Mock get_per_atom_energy_components."""
+        if not self.output_per_atom_energy_components:
+            raise ValueError("Per-atom energy components not enabled")
+
         return {
             'mlff_atomic_energy': np.array([0.1, 0.2, 0.3]),
             'zbl_repulsion': np.array([0.0, 0.0, 0.0]),
@@ -34,9 +42,19 @@ class MockSo3lrSfCalculator:
             'dispersion_energy': np.array([-0.01, -0.02, -0.03])
         }
 
-# Mock the calculator module
-sys.modules['src.calculator'] = Mock()
-sys.modules['src.calculator'].So3lrSfCalculator = MockSo3lrSfCalculator
+    def get_potential_energy(self):
+        """Mock method for ASE compatibility."""
+        return -100.0
+
+    def _init_calculator(self):
+        """Mock initialization method for structure optimization."""
+        # Create a fresh mock calculator with proper return values
+        self._calculator = Mock()
+        self._calculator.results = {}
+        self._calculator.get_potential_energy = Mock(return_value=-100.0)
+        self._calculator.get_forces = Mock(return_value=np.zeros((3, 3)))
+
+# Note: Calculator mocking is now handled by fixtures, not globally
 
 # Add src to Python path for testing
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -102,8 +120,22 @@ def sample_complex_atoms(sample_protein_atoms, sample_ligand_atoms):
 
 @pytest.fixture
 def mock_calculator():
-    """Create a mock SO3LR calculator for testing."""
-    return MockSo3lrSfCalculator(output_per_atom_energy_components=True)
+    """Provide a mock So3lrSfCalculator instance for unit tests."""
+    return MockSo3lrSfCalculator()
+
+
+@pytest.fixture
+def real_calculator(so3lr_model_path):
+    """Provide real So3lrSfCalculator for integration tests."""
+    from pathlib import Path
+    if not Path(so3lr_model_path).exists():
+        pytest.skip(f"SO3LR model not available at {so3lr_model_path}")
+
+    from src.calculator import So3lrSfCalculator
+    return So3lrSfCalculator(
+        model_path=so3lr_model_path,
+        output_per_atom_energy_components=False
+    )
 
 
 @pytest.fixture
@@ -178,6 +210,77 @@ $$$$
 
 
 @pytest.fixture
+def water_files(test_data_dir):
+    """Get water molecule files from test_data directory."""
+    files = {}
+
+    # Check if test_data directory exists
+    if not test_data_dir.exists():
+        pytest.skip("test_data directory not found")
+
+    # Look for water files in different formats
+    for format_ext in ['xyz', 'pdb', 'sdf']:
+        water_file = test_data_dir / f"water.{format_ext}"
+        if water_file.exists():
+            files[format_ext] = water_file
+        else:
+            pytest.skip(f"Water file water.{format_ext} not found in test_data")
+
+    return files
+
+
+@pytest.fixture
+def multi_water_file(test_data_dir):
+    """Get multi-water file from test_data directory."""
+    multi_file = test_data_dir / "multi_water.sdf"
+    if not multi_file.exists():
+        pytest.skip("multi_water.sdf not found in test_data")
+    return multi_file
+
+
+@pytest.fixture
+def alanine_files(test_data_dir):
+    """Get alanine molecule files from test_data directory."""
+    files = {}
+
+    # Check if test_data directory exists
+    if not test_data_dir.exists():
+        pytest.skip("test_data directory not found")
+
+    # Look for alanine files in different formats
+    for format_ext in ['xyz', 'pdb']:
+        alanine_file = test_data_dir / f"alanine.{format_ext}"
+        if alanine_file.exists():
+            files[format_ext] = alanine_file
+
+    if not files:
+        pytest.skip("No alanine files found in test_data")
+
+    return files
+
+
+@pytest.fixture
+def so3lr_model_path():
+    """Get real SO3LR model path for testing - must exist."""
+    from src.config import get_so3lr_model_path
+    model_path = get_so3lr_model_path()
+
+    if model_path is None:
+        raise FileNotFoundError("SO3LR model parameters directory not found. Please install so3lr package or set SO3LR_MODEL_PATH environment variable.")
+
+    # Verify the path actually exists
+    from pathlib import Path
+    path = Path(model_path)
+    if not path.exists():
+        raise FileNotFoundError(f"SO3LR model directory does not exist: {model_path}")
+
+    if not path.is_dir():
+        raise NotADirectoryError(f"SO3LR model path is not a directory: {model_path}")
+
+    return model_path
+
+
+@pytest.fixture
 def sample_energy_components():
     """Sample per-atom energy components for testing explainability."""
     return {
@@ -228,6 +331,15 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "requires_model: mark test as requiring SO3LR model files"
+    )
+    config.addinivalue_line(
+        "markers", "unit: mark test as unit test"
+    )
+    config.addinivalue_line(
+        "markers", "integration: mark test as integration test"
+    )
+    config.addinivalue_line(
+        "markers", "slow: mark test as slow running test"
     )
 
 

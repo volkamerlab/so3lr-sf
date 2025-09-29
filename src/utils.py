@@ -15,42 +15,6 @@ from ase import Atoms
 from ase.io import read, write
 
 
-def find_so3lr_params() -> Optional[str]:
-    """
-    Locate SO3LR model parameters directory within the project.
-
-    This function looks for the SO3LR parameters directory in the project structure:
-    - Looks for so3lr/so3lr/params relative to current file or project root
-    - Uses the specific path: /home/hamza/github/so3lr-sf/so3lr/so3lr/params
-
-    Returns:
-        str: Path to SO3LR parameters directory, or None if not found
-
-    Example:
-        >>> path = find_so3lr_params()
-        >>> if path:
-        ...     print(f"Found SO3LR params at: {path}")
-        ... else:
-        ...     print("SO3LR parameters not found")
-    """
-    # Get the project root directory (where this package is located)
-    current_file = Path(__file__).resolve()
-    project_root = current_file.parent.parent  # Go up from src/ to project root
-
-    # Expected SO3LR params path within the project
-    so3lr_params_path = project_root / "so3lr" / "so3lr" / "params"
-
-    # Check if the directory exists
-    if so3lr_params_path.is_dir():
-        return str(so3lr_params_path)
-
-    # Fallback: check the specific absolute path
-    fallback_path = Path("/home/hamza/github/so3lr-sf/so3lr/so3lr/params")
-    if fallback_path.is_dir():
-        return str(fallback_path)
-
-    return None
-
 
 def _read_multi_sdf_blocks(file_path: Path) -> List[Atoms]:
     """
@@ -198,7 +162,7 @@ def get_supported_formats() -> List[str]:
     Returns:
         List[str]: List of supported file extensions
     """
-    return ['.xyz', '.pdb', '.sdf', '.mol', '.mol2', '.cif', '.traj', '.vasp', '.poscar']
+    return ['.xyz', '.pdb', '.sdf']
 
 
 def validate_structure(atoms: Atoms) -> bool:
@@ -276,7 +240,7 @@ def get_ligand_files(ligands_input: str, output_dir: Optional[Union[str, Path]] 
     elif ligands_path.is_dir():
         # Directory with ligand files
         ligand_files = []
-        supported_extensions = ['.xyz', '.sdf', '.mol', '.mol2', '.pdb']
+        supported_extensions = ['.xyz', '.sdf', '.pdb']
 
         for ext in supported_extensions:
             ligand_files.extend([str(f) for f in ligands_path.glob(f"*{ext}")])
