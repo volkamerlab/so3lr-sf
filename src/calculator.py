@@ -10,7 +10,8 @@ from typing import Optional, Dict, Any, Union
 from ase import Atoms
 from mlff.md.calculator_sparse import mlffCalculatorSparse
 
-from .utils import find_so3lr_params, read_structure, validate_structure
+from .utils import read_structure, validate_structure
+from .config import get_default_model_path
 
 
 class So3lrSfCalculator:
@@ -59,12 +60,7 @@ class So3lrSfCalculator:
         """
         # Auto-detect model path if not provided
         if model_path is None:
-            model_path = find_so3lr_params()
-            if model_path is None:
-                raise FileNotFoundError(
-                    "Could not automatically locate SO3LR model parameters. "
-                    "Please provide model_path explicitly or ensure SO3LR is properly installed."
-                )
+            model_path = get_default_model_path()
 
         self.model_path = model_path
         self.lr_cutoff = lr_cutoff

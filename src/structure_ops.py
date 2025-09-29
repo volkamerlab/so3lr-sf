@@ -103,6 +103,33 @@ def trim_structure(
 
     return output_path
 
+def perform_trimming(protein_path, ligands_source, radius, trim_lig, output_dir, logger):
+    """Handle protein trimming workflow."""
+    from .utils import get_ligand_files
+
+    logger.info("=== TRIMMING PHASE ===")
+
+    # Get representative ligand for trimming
+    if trim_lig:
+        if not Path(trim_lig).exists():
+            raise FileNotFoundError(f"Specified trim ligand not found: {trim_lig}")
+        representative_ligand = trim_lig
+        logger.info(f"Using specified ligand for trimming: {representative_ligand}")
+    else:
+        ligand_files = get_ligand_files(ligands_source, output_dir)
+        if not ligand_files:
+            raise ValueError("No ligand files found")
+        representative_ligand = ligand_files[0]
+        logger.info(f"Using first ligand for trimming: {representative_ligand}")
+
+    # Perform trimming
+    trimmed_protein_path = trim_structure(
+        protein_path, representative_ligand,
+        radius=radius, output_dir=output_dir
+    )
+    logger.info(f"Protein trimmed to {radius}Å radius: {trimmed_protein_path}")
+
+    return trimmed_protein_path
 
 def create_optimization_constraint(
     complex_atoms: Atoms,
@@ -393,35 +420,6 @@ def extract_ligands(
     print(f"Extracted {len(output_files)} structures to {output_dir}")
 
     return output_files
-
-
-def perform_trimming(protein_path, ligands_source, radius, trim_lig, output_dir, logger):
-    """Handle protein trimming workflow."""
-    from .utils import get_ligand_files
-
-    logger.info("=== TRIMMING PHASE ===")
-
-    # Get representative ligand for trimming
-    if trim_lig:
-        if not Path(trim_lig).exists():
-            raise FileNotFoundError(f"Specified trim ligand not found: {trim_lig}")
-        representative_ligand = trim_lig
-        logger.info(f"Using specified ligand for trimming: {representative_ligand}")
-    else:
-        ligand_files = get_ligand_files(ligands_source, output_dir)
-        if not ligand_files:
-            raise ValueError("No ligand files found")
-        representative_ligand = ligand_files[0]
-        logger.info(f"Using first ligand for trimming: {representative_ligand}")
-
-    # Perform trimming
-    trimmed_protein_path = trim_structure(
-        protein_path, representative_ligand,
-        radius=radius, output_dir=output_dir
-    )
-    logger.info(f"Protein trimmed to {radius}Å radius: {trimmed_protein_path}")
-
-    return trimmed_protein_path
 
 
 def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_dir,
