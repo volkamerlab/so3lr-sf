@@ -16,7 +16,7 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 - **Multi-Ligand Screening**: Process multiple ligands from SDF files or directories
 
 ### File Format Support
-- **Input**: PDB, XYZ, SDF, MOL, MOL2 formats
+- **Input**: PDB, XYZ, SDF formats
 - **Multi-molecule files**: Automatic splitting of multi-ligand SDF or XYZ files
 - **Output**: JSON results, XYZ optimized structures, PNG heatmaps
 
@@ -29,6 +29,32 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 ## 📦 Installation
 
 @TODO
+
+## 🏗️ Architecture
+
+### Module Organization
+```
+src/
+├── calculator.py           # SO3LR calculator implementation
+├── config.py               # Configuration management and model path discovery
+├── interaction_energy.py   # Main energy calculation functions
+├── structure_ops.py        # Structure manipulation and optimization
+├── explainability.py       # Explainability analysis and visualization
+├── utils.py                # Utility functions and I/O operations
+└── __init__.py            # Package interface
+```
+### Output directory Structure
+```
+results_steps_100_fmax0.05/
+├── results_summary.json           # Main results file
+├── optimization_log.json          # Optimization details (if --opt-log)
+├── individual_ligands/             # Extracted ligands (for multi-SDF)
+├── opt_ligand/                     # Optimized ligand structures
+├── opt_complexes/                  # Optimized complex structures
+└── ligand_exp/                     # Explainability heatmaps
+    ├── ligand_001_heatmap.png
+    └── ligand_002_heatmap.png
+```
 
 ## 🔧 Quick Start
 
@@ -178,45 +204,52 @@ python run_so3lr_sf.py \
 }
 ```
 
-### Directory Structure
+
+
+## 🧪 Testing
+
+SO3LR-SF includes a comprehensive test suite ensuring reliability and correctness across all components.
+
+### Test Coverage
+- **6 Test Modules**: Complete coverage of all package functionality
+  - `test_calculator.py`: Unit and integration tests for SO3LR calculator implementation
+  - `test_structure_ops.py`: Structure manipulation, trimming, and optimization tests
+  - `test_utils.py`: I/O operations, file handling, and utility function tests
+  - `test_config.py`: Configuration management and model path discovery tests
+  - `conftest.py`: Shared fixtures and mock infrastructure
+- **Mock Infrastructure**: Comprehensive mocking for testing without heavy ML dependencies
+- **Integration Tests**: Real SO3LR model testing when available
+- **Minimum Coverage**: 40% baseline with detailed reporting via `.coveragerc`
+
+### Running Tests
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=html
+
+# Run specific test categories
+pytest -m unit          # Fast unit tests only
+pytest -m integration   # Integration tests with real models
+pytest -m slow          # Comprehensive slow tests
 ```
-results_steps_100_fmax0.05/
-├── results_summary.json           # Main results file
-├── optimization_log.json          # Optimization details (if --opt-log)
-├── individual_ligands/             # Extracted ligands (for multi-SDF)
-├── opt_ligand/                     # Optimized ligand structures
-├── opt_complexes/                  # Optimized complex structures
-└── ligand_exp/                     # Explainability heatmaps
-    ├── ligand_001_heatmap.png
-    └── ligand_002_heatmap.png
-```
 
-
-### Code Quality Metrics
-- **Test Coverage**: 85%+ across all modules
-- **Code Style**: Black, isort, flake8 compliant
-- **Type Checking**: mypy validated
-- **Documentation**: 100% function documentation coverage
-
-### Performance Benchmarks
-@TODO
-
-## 🏗️ Architecture
-
-### Module Organization
-```
-src/
-├── calculator.py           # SO3LR calculator implementation
-├── interaction_energy.py   # Main energy calculation functions
-├── structure_ops.py        # Structure manipulation and optimization
-├── explainability.py       # Explainability analysis and visualization
-├── utils.py                # Utility functions and I/O operations
-└── __init__.py            # Package interface
-```
+### Test Infrastructure
+- **Automated CI/CD**: GitHub Actions pipeline with comprehensive testing
+  - Matrix testing on Ubuntu with Python 3.12
+  - Automatic SO3LR model download for integration tests
+  - Poetry dependency management with caching
+  - Coverage reporting with multiple formats (XML, HTML, JSON, badge)
+  - Codecov integration for coverage tracking
+  - PR coverage comments and push summary reports
+- **Mock Calculator**: Lightweight testing without SO3LR model dependencies
+- **Fixture Library**: Comprehensive test data and molecule fixtures
+- **Error Handling**: Robust testing of failure scenarios and edge cases
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on:
+We welcome contributions! Please see our CONTRIBUTING.md (ro be written) for details on:
 - Code style and formatting
 - Testing requirements
 - Documentation standards
@@ -225,15 +258,6 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 📚 Citation
-
-## 🆘 Support
-
-- **Documentation**: [Full API Documentation](docs/)
-- **Issues**: [GitHub Issues](https://github.com/user/so3lr-sf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/user/so3lr-sf/discussions)
-
-
 
