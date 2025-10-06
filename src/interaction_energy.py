@@ -158,6 +158,67 @@ def compute_interaction_energy(complex_energy: float, protein_energy: float, lig
     return interaction_energy
 
 
+def compute_eda_analysis(protein_components: Dict, ligand_components: Dict, complex_components: Dict,
+                        logger=None) -> Dict[str, Any]:
+    """
+    Compute Energy Decomposition Analysis - calculate total energy contribution of each component.
+
+    Args:
+        protein_components: Per-atom components for protein
+        ligand_components: Per-atom components for ligand
+        complex_components: Per-atom components for complex
+        logger: Logger instance
+
+    Returns:
+        Dictionary with total energies for each component across protein, ligand, and complex
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    logger.info("Computing Energy Decomposition Analysis...")
+
+    eda_analysis = {
+        'protein_energy_components': {},
+        'ligand_energy_components': {},
+        'complex_energy_components': {},
+        'interaction_energy_components': {}
+    }
+
+    # Get all unique component names across all structures
+    all_components = set()
+    if protein_components:
+        all_components.update(protein_components.keys())
+    if ligand_components:
+        all_components.update(ligand_components.keys())
+    if complex_components:
+        all_components.update(complex_components.keys())
+
+    # Calculate totals for each component
+    for comp_name in all_components:
+        # Protein component total
+        protein_total = float(np.sum(protein_components.get(comp_name, 0.0))) if protein_components else 0.0
+        eda_analysis['protein_energy_components'][comp_name] = protein_total
+
+        # Ligand component total
+        ligand_total = float(np.sum(ligand_components.get(comp_name, 0.0))) if ligand_components else 0.0
+        eda_analysis['ligand_energy_components'][comp_name] = ligand_total
+
+        # Complex component total
+        complex_total = float(np.sum(complex_components.get(comp_name, 0.0))) if complex_components else 0.0
+        eda_analysis['complex_energy_components'][comp_name] = complex_total
+
+        # Interaction energy component (complex - protein - ligand)
+        interaction_comp_total = complex_total - protein_total - ligand_total
+        eda_analysis['interaction_energy_components'][comp_name] = interaction_comp_total
+
+        logger.debug(f"Component '{comp_name}': "
+                    f"protein={protein_total:.6f}, ligand={ligand_total:.6f}, "
+                    f"complex={complex_total:.6f}, interaction={interaction_comp_total:.6f} eV")
+
+    logger.info("Energy Decomposition Analysis complete")
+    return eda_analysis
+
+
 def analyze_explainability(protein_components: Dict, ligand_components: Dict, complex_components: Dict,
                          protein_atoms: Atoms, ligand_atoms: Atoms, ligand_path: Union[str, Path],
                          heatmap_output: Optional[Union[str, Path]] = None, logger=None) -> Dict[str, Any]:
@@ -233,6 +294,7 @@ def protein_ligand_interaction(
     calc: So3lrSfCalculator,
     complex_path: Optional[Union[str, Path]] = None,
     explainability: bool = False,
+    eda: bool = False,
     heatmap_output: Optional[Union[str, Path]] = None,
     verbose: bool = False
 ) -> Union[float, Tuple[float, Dict[str, Any]]]:
@@ -248,13 +310,14 @@ def protein_ligand_interaction(
         calc: Initialized calculator instance
         complex_path: Optional path to pre-built complex structure
         explainability: If True, calculate per-atom energy differences and generate heatmap
+        eda: If True, save individual energy component totals separately
         heatmap_output: Path to save heatmap image (only used if explainability=True)
         verbose: Enable verbose logging
 
     Returns:
         float or tuple:
-            - If explainability=False: Just the interaction energy in eV
-            - If explainability=True: (interaction_energy, analysis_dict)
+            - If explainability=False and eda=False: Just the interaction energy in eV
+            - If explainability=True or eda=True: (interaction_energy, analysis_dict)
 
     Example:
         >>> calc = So3lrSfCalculator()
@@ -281,9 +344,9 @@ def protein_ligand_interaction(
     logger.info(f"Ligand: {ligand_path}")
     logger.debug(f"Using calculator with model: {calc.model_path}")
 
-    # Check if per-atom components are needed for explainability
-    if explainability and not calc.output_per_atom_energy_components:
-        logger.warning("Explainability requested but calculator was not initialized with output_per_atom_energy_components=True")
+    # Check if per-atom components are needed for explainability or EDA
+    if (explainability or eda) and not calc.output_per_atom_energy_components:
+        logger.warning("Explainability or EDA requested but calculator was not initialized with output_per_atom_energy_components=True")
 
     # Step 1: Prepare structures
     protein_atoms, ligand_atoms, complex_atoms = prepare_structures(
@@ -292,12 +355,12 @@ def protein_ligand_interaction(
 
     # Step 2: Calculate individual energies
     protein_energy, ligand_energy, protein_components, ligand_components = calculate_individual_energies(
-        protein_atoms, ligand_atoms, calc, explainability, logger
+        protein_atoms, ligand_atoms, calc, explainability or eda, logger
     )
 
     # Step 3: Calculate complex energy
     complex_energy, complex_components = calculate_complex_energy(
-        complex_atoms, calc, explainability, logger
+        complex_atoms, calc, explainability or eda, logger
     )
 
     # Step 4: Compute interaction energy
@@ -305,13 +368,25 @@ def protein_ligand_interaction(
         complex_energy, protein_energy, ligand_energy, logger
     )
 
-    if not explainability:
+    if not explainability and not eda:
         return interaction_energy
 
-    # Step 5: Explainability analysis
-    analysis = analyze_explainability(
-        protein_components, ligand_components, complex_components,
-        protein_atoms, ligand_atoms, ligand_path, heatmap_output, logger
-    )
+    # Step 5: Analysis (Explainability and/or EDA)
+    analysis = {}
+
+    if explainability:
+        # Explainability analysis
+        explainability_analysis = analyze_explainability(
+            protein_components, ligand_components, complex_components,
+            protein_atoms, ligand_atoms, ligand_path, heatmap_output, logger
+        )
+        analysis.update(explainability_analysis)
+
+    if eda:
+        # Energy Decomposition Analysis
+        eda_analysis = compute_eda_analysis(
+            protein_components, ligand_components, complex_components, logger
+        )
+        analysis.update(eda_analysis)
 
     return interaction_energy, analysis

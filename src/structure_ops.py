@@ -528,12 +528,13 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
             working_protein_path, working_ligand_path, calc,
             complex_path=working_complex_path,
             explainability=args.explain,
+            eda=args.eda,
             heatmap_output=heatmap_output,
             verbose=False
         )
 
         # Handle results
-        if args.explain:
+        if args.explain or args.eda:
             interaction_energy, analysis = result_from_calc
         else:
             interaction_energy = result_from_calc
@@ -552,9 +553,17 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
 
         logger.info(f"  Interaction energy: {interaction_energy:.6f} eV "
                    f"({interaction_energy * 23.06:.2f} kcal/mol)")
+
+        # Log explainability component totals
         if analysis.get('component_totals'):
             logger.info("  Component contributions:")
             for comp, total in analysis['component_totals'].items():
+                logger.info(f"    {comp}: {total:.6f} eV")
+
+        # Log EDA component totals
+        if analysis.get('interaction_energy_components'):
+            logger.info("  EDA Interaction energy components:")
+            for comp, total in analysis['interaction_energy_components'].items():
                 logger.info(f"    {comp}: {total:.6f} eV")
 
         return result, None

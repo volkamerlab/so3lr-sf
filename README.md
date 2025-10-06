@@ -12,7 +12,9 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 - **Protein-Ligand Interaction Energy Calculation**: Calculate binding energies using SO3LR force fields
 - **Structure Optimization**: Optimize protein, ligand, and complex structures with FIRE/LBFGS algorithms
 - **Protein Trimming**: Trim protein structures around ligands to reduce computational cost
-- **Explainability Analysis**: Generate per-atom energy contributions and molecular heatmaps
+- **Energy decomposition analysis (EDA)**: Analysis of each energy term individually
+- **Per-atom Explainability**: Generate per-atom energy contributions and molecular heatmaps
+- **Interaction-based Explainability**: ProLIF-powered protein-ligand interaction fingerprinting and visualization (@TODO)
 - **Multi-Ligand Screening**: Process multiple ligands from SDF files or directories
 
 ### File Format Support
@@ -35,13 +37,14 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 ### Module Organization
 ```
 src/
-├── calculator.py           # SO3LR calculator implementation
-├── config.py               # Configuration management and model path discovery
-├── interaction_energy.py   # Main energy calculation functions
-├── structure_ops.py        # Structure manipulation and optimization
-├── explainability.py       # Explainability analysis and visualization
-├── utils.py                # Utility functions and I/O operations
-└── __init__.py            # Package interface
+├── calculator.py                      # SO3LR calculator implementation
+├── config.py                          # Configuration management and model path discovery
+├── interaction_energy.py              # Main energy calculation functions
+├── structure_ops.py                   # Structure manipulation and optimization
+├── explainability.py                  # Energy-based explainability analysis and visualization
+├── protein_ligand_explainability.py   # ProLIF-based protein-ligand interaction analysis
+├── utils.py                           # Utility functions and I/O operations
+└── __init__.py                        # Package interface
 ```
 ### Output directory Structure
 ```

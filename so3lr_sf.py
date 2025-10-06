@@ -81,6 +81,11 @@ Examples:
         action="store_true",
         help="Generate explainability analysis and heatmaps"
     )
+    parser.add_argument(
+        "--eda",
+        action="store_true",
+        help="Perform Energy Decomposition Analysis - save individual energy terms separately"
+    )
 
     # Trimming parameters
     parser.add_argument(
@@ -164,7 +169,7 @@ def main():
         logger.info("Starting SO3LR-SF protein-ligand interaction calculation")
         logger.info(f"Protein: {args.protein}")
         logger.info(f"Ligands: {args.ligands}")
-        logger.info(f"Workflow: trim={args.trim}, optimize={args.optimize}, explain={args.explain}")
+        logger.info(f"Workflow: trim={args.trim}, optimize={args.optimize}, eda={args.eda}, explain={args.explain}")
 
         # Setup output directory and subdirectories
         output_dir = setup_output_directory(
@@ -175,7 +180,7 @@ def main():
 
         # Setup calculator
         calc_kwargs = {}
-        if args.explain:
+        if args.explain or args.eda:
             calc_kwargs['output_per_atom_energy_components'] = True
 
         logger.info("Initializing SO3LRSF calculator...")

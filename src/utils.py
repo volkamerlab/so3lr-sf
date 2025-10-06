@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Optional, List, Union
 from ase import Atoms
 from ase.io import read, write
+from rdkit import Chem
+from rdkit.Chem import rdDetermineBonds, rdCoordGen
 
 
 
@@ -192,6 +194,89 @@ def validate_structure(atoms: Atoms) -> bool:
         raise ValueError("Structure contains invalid (NaN or infinite) coordinates")
 
     return True
+
+
+def read_xyz_with_bonds(file_path: Union[str, Path]):
+    """
+    Read XYZ file and determine bonds using RDKit.
+
+    Args:
+        file_path: Path to XYZ file
+
+    Returns:
+        rdkit.Chem.Mol: RDKit molecule object with bonds determined
+    """
+    mol = Chem.MolFromXYZFile(str(file_path))
+    if mol is None:
+        raise ValueError(f"Could not read molecule from {file_path}")
+
+    # Try different charges to determine bonds
+    bond_determined = False
+    for charge in range(-2, 3):
+        try:
+            rdDetermineBonds.DetermineBonds(mol, charge=charge)
+            bond_determined = True
+            break
+        except (ValueError, RuntimeError):
+            continue
+
+    if not bond_determined:
+        # Fallback: use connectivity based on distance
+        from rdkit.Chem import AllChem
+        AllChem.ConnectTheMolecule(mol)
+
+    # Ensure molecule has proper 2D/3D coordinates
+    try:
+        rdCoordGen.AddCoords(mol)
+    except:
+        # If 2D coord gen fails, molecule already has 3D coords
+        pass
+
+    # Sanitize molecule for ProLIF
+    try:
+        Chem.SanitizeMol(mol)
+    except:
+        # Partial sanitization if full fails
+        try:
+            Chem.SanitizeMol(mol, Chem.SANITIZE_ALL ^ Chem.SANITIZE_PROPERTIES)
+        except:
+            pass
+
+    return mol
+
+
+def load_molecule_to_rdkit(file_path: Union[str, Path]):
+    """
+    Universal function to load any molecule (protein or ligand) to RDKit format.
+
+    Supports: PDB, SDF, XYZ formats
+
+    Args:
+        file_path: Path to structure file
+
+    Returns:
+        rdkit.Chem.Mol: RDKit molecule object
+
+    Raises:
+        ValueError: If file format is not supported or molecule cannot be loaded
+    """
+    file_path = Path(file_path)
+    suffix = file_path.suffix.lower()
+
+    # Load RDKit molecule based on format
+    if suffix == '.pdb':
+        mol = Chem.MolFromPDBFile(str(file_path), removeHs=False)
+    elif suffix == '.sdf':
+        mol = Chem.MolFromMolFile(str(file_path))
+    elif suffix == '.xyz':
+        mol = read_xyz_with_bonds(file_path)
+    else:
+        raise ValueError(f"Unsupported file format: {suffix}. Supported formats: .pdb, .sdf, .xyz")
+
+    if mol is None:
+        raise ValueError(f"Could not load molecule from {file_path}")
+
+    return mol
 
 
 def get_ligand_files(ligands_input: str, output_dir: Optional[Union[str, Path]] = None) -> List[str]:

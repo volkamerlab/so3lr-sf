@@ -12,48 +12,12 @@ from PIL import Image
 from pathlib import Path
 from typing import Dict, Any, Union, Optional, Tuple
 from matplotlib.colors import Normalize
-
-# RDKit imports - handle import gracefully
-try:
-    from rdkit import Chem
-    from rdkit.Chem import Draw, rdDetermineBonds, rdCoordGen
-    from rdkit.Chem.Draw import SimilarityMaps
-    RDKIT_AVAILABLE = True
-except ImportError:
-    RDKIT_AVAILABLE = False
-    Chem = None
-    Draw = None
-    rdDetermineBonds = None
-    rdCoordGen = None
-    SimilarityMaps = None
-
-from .utils import read_structure
+from rdkit import Chem
+from rdkit.Chem import Draw
+from rdkit.Chem.Draw import SimilarityMaps
 
 
-def read_xyz_with_bonds(file_path: Union[str, Path]):
-    """
-    Read XYZ file and determine bonds using RDKit.
-
-    Args:
-        file_path: Path to XYZ file
-
-    Returns:
-        rdkit.Chem.Mol: RDKit molecule object with bonds determined
-    """
-    mol = Chem.MolFromXYZFile(str(file_path))
-    if mol is None:
-        raise ValueError(f"Could not read molecule from {file_path}")
-
-    # Try different charges to determine bonds
-    for charge in range(-2, 3):
-        try:
-            rdDetermineBonds.DetermineBonds(mol, charge=charge)
-            break
-        except ValueError:
-            continue
-
-    rdCoordGen.AddCoords(mol)
-    return mol
+from .utils import read_xyz_with_bonds, load_molecule_to_rdkit
 
 
 def _similarity_map_gen(mol, weights, cmap="bwr", width=600, height=600, **kwargs):
@@ -112,16 +76,8 @@ def generate_interaction_heatmap(
     """
     ligand_path = Path(ligand_path)
     print(f"Generating heatmap for ligand: {ligand_path}")
-    # Read ligand molecule for visualization
-    if ligand_path.suffix.lower() == '.xyz':
-        mol = read_xyz_with_bonds(ligand_path)
-    elif ligand_path.suffix.lower() in ['.sdf', '.mol']:
-        mol = Chem.MolFromMolFile(str(ligand_path))
-    elif ligand_path.suffix.lower() == '.pdb':
-        mol = Chem.MolFromPDBFile(str(ligand_path))
-    else:
-        # Try XYZ format as fallback
-        mol = read_xyz_with_bonds(ligand_path)
+    # Read ligand molecule for visualization using universal function
+    mol = load_molecule_to_rdkit(ligand_path)
 
     if mol is None:
         raise ValueError(f"Could not read molecule from {ligand_path}")
