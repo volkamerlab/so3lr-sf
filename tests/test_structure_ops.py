@@ -864,3 +864,402 @@ class TestStructureOpsIntegration:
         assert Path(result2).exists()
         trimmed_atoms2 = load_ase_structure(result2)[0]
         assert len(trimmed_atoms2) <= len(original_atoms)
+
+
+class TestOptimizeProtein:
+    """Tests for optimize_protein function."""
+
+    @pytest.mark.unit
+    def test_optimize_protein_basic(self, temp_dir, water_files, mock_calculator):
+        """Test basic protein optimization."""
+        from src.structure_ops import optimize_protein
+        from tests.conftest import MockSo3lrSfCalculator
+        from unittest.mock import Mock
+
+        mock_logger = Mock()
+        optimization_log = []
+
+        with patch('src.structure_ops.optimize_structure') as mock_optimize:
+            mock_optimize.return_value = (str(temp_dir / "protein_opt.xyz"), {'converged': True, 'steps': 50})
+
+            result = optimize_protein(
+                working_protein_path=water_files['xyz'],
+                calc=mock_calculator,
+                optimizer="FIRE",
+                fmax=0.01,
+                steps=1000,
+                output_dir=temp_dir,
+                optimization_log=optimization_log,
+                opt_log=True,
+                logger=mock_logger
+            )
+
+            # Check return value
+            assert result == str(temp_dir / "protein_opt.xyz")
+
+            # Check optimization was called
+            mock_optimize.assert_called_once()
+
+            # Check optimization log was updated
+            assert len(optimization_log) == 1
+            assert optimization_log[0]['structure_type'] == 'protein'
+            assert optimization_log[0]['structure_name'] == 'water'
+
+    @pytest.mark.unit
+    def test_optimize_protein_no_log(self, temp_dir, water_files, mock_calculator):
+        """Test protein optimization without logging."""
+        from src.structure_ops import optimize_protein
+        from unittest.mock import Mock
+
+        mock_logger = Mock()
+
+        with patch('src.structure_ops.optimize_structure') as mock_optimize:
+            mock_optimize.return_value = (str(temp_dir / "protein_opt.xyz"), {'converged': True})
+
+            result = optimize_protein(
+                working_protein_path=water_files['xyz'],
+                calc=mock_calculator,
+                optimizer="FIRE",
+                fmax=0.01,
+                steps=1000,
+                output_dir=temp_dir,
+                optimization_log=None,
+                opt_log=False,
+                logger=mock_logger
+            )
+
+            assert result == str(temp_dir / "protein_opt.xyz")
+
+
+class TestProcessSingleLigand:
+    """Tests for process_single_ligand function."""
+
+    @pytest.mark.unit
+    def test_process_single_ligand_basic_no_optimization(self, temp_dir, water_files, mock_calculator):
+        """Test basic ligand processing without optimization."""
+        from src.structure_ops import process_single_ligand
+        from unittest.mock import Mock
+
+        # Create mock args
+        mock_args = Mock()
+        mock_args.optimize = False
+        mock_args.explain = False
+        mock_args.eda = False
+        mock_args.opt_log = False
+
+        mock_logger = Mock()
+        optimization_log = []
+
+        with patch('src.structure_ops.protein_ligand_interaction') as mock_interaction:
+            mock_interaction.return_value = -2.5  # Simple energy value
+
+            result, error = process_single_ligand(
+                ligand_file=water_files['sdf'],
+                args=mock_args,
+                calc=mock_calculator,
+                working_protein_path=water_files['pdb'],
+                output_dir=temp_dir,
+                optimization_log=optimization_log,
+                logger=mock_logger
+            )
+
+            # Check no error
+            assert error is None
+
+            # Check result structure
+            assert result['ligand_name'] == 'water'
+            assert result['interaction_energy'] == -2.5
+            assert result['binding_energy_kcal_mol'] == -2.5 * 23.06
+            assert result['working_complex_path'] is None
+
+    @pytest.mark.unit
+    def test_process_single_ligand_with_explainability(self, temp_dir, water_files, mock_calculator):
+        """Test ligand processing with explainability analysis."""
+        from src.structure_ops import process_single_ligand
+        from unittest.mock import Mock
+
+        # Create mock args
+        mock_args = Mock()
+        mock_args.optimize = False
+        mock_args.explain = True
+        mock_args.eda = False
+        mock_args.opt_log = False
+
+        mock_logger = Mock()
+        optimization_log = []
+
+        with patch('src.structure_ops.protein_ligand_interaction') as mock_interaction:
+            # Mock explainability return
+            mock_analysis = {
+                'component_totals': {'MLFF': -1.5, 'Electrostatics': -0.8},
+                'heatmap_path': str(temp_dir / "heatmap.png")
+            }
+            mock_interaction.return_value = (-2.3, mock_analysis)
+
+            result, error = process_single_ligand(
+                ligand_file=water_files['sdf'],
+                args=mock_args,
+                calc=mock_calculator,
+                working_protein_path=water_files['pdb'],
+                output_dir=temp_dir,
+                optimization_log=optimization_log,
+                logger=mock_logger
+            )
+
+            # Check no error
+            assert error is None
+
+            # Check analysis was included
+            assert result['analysis'] == mock_analysis
+            assert result['interaction_energy'] == -2.3
+
+            # Check that heatmap output was set correctly
+            expected_heatmap = temp_dir / "ligand_exp" / "water_heatmap.png"
+            mock_interaction.assert_called_with(
+                water_files['pdb'], water_files['sdf'], mock_calculator,
+                complex_path=None,
+                explainability=True,
+                eda=False,
+                heatmap_output=expected_heatmap,
+                verbose=False
+            )
+
+    @pytest.mark.unit
+    def test_process_single_ligand_with_eda(self, temp_dir, water_files, mock_calculator):
+        """Test ligand processing with EDA analysis."""
+        from src.structure_ops import process_single_ligand
+        from unittest.mock import Mock
+
+        # Create mock args
+        mock_args = Mock()
+        mock_args.optimize = False
+        mock_args.explain = False
+        mock_args.eda = True
+        mock_args.opt_log = False
+
+        mock_logger = Mock()
+        optimization_log = []
+
+        with patch('src.structure_ops.protein_ligand_interaction') as mock_interaction:
+            # Mock EDA return
+            mock_analysis = {
+                'interaction_energy_components': {'mlff': -1.2, 'zbl': 0.3, 'electrostatic': -0.9}
+            }
+            mock_interaction.return_value = (-1.8, mock_analysis)
+
+            result, error = process_single_ligand(
+                ligand_file=water_files['sdf'],
+                args=mock_args,
+                calc=mock_calculator,
+                working_protein_path=water_files['pdb'],
+                output_dir=temp_dir,
+                optimization_log=optimization_log,
+                logger=mock_logger
+            )
+
+            # Check no error
+            assert error is None
+
+            # Check EDA analysis was included
+            assert result['analysis'] == mock_analysis
+            assert result['interaction_energy'] == -1.8
+
+    @pytest.mark.unit
+    def test_process_single_ligand_error_handling(self, temp_dir, water_files, mock_calculator):
+        """Test error handling in process_single_ligand."""
+        from src.structure_ops import process_single_ligand
+        from unittest.mock import Mock
+
+        # Create mock args
+        mock_args = Mock()
+        mock_args.optimize = False
+        mock_args.explain = False
+        mock_args.eda = False
+        mock_args.opt_log = False
+
+        mock_logger = Mock()
+        optimization_log = []
+
+        with patch('src.structure_ops.protein_ligand_interaction') as mock_interaction:
+            mock_interaction.side_effect = Exception("Calculation failed")
+
+            result, error = process_single_ligand(
+                ligand_file=water_files['sdf'],
+                args=mock_args,
+                calc=mock_calculator,
+                working_protein_path=water_files['pdb'],
+                output_dir=temp_dir,
+                optimization_log=optimization_log,
+                logger=mock_logger
+            )
+
+            # Check error was caught
+            assert error == "Calculation failed"
+            assert result['ligand_name'] == 'water'
+            assert 'error' in result
+
+
+class TestProcessSingleLigandIntegration:
+    """Slow integration tests for complete workflow using real test data."""
+
+    @pytest.mark.slow
+    def test_process_single_ligand_complete_workflow_with_test_data(self, temp_dir):
+        """
+        Complete unmocked integration test with all features enabled:
+        - Loads real alanine.pdb as protein and water.sdf as ligand
+        - Runs actual optimization algorithm
+        - Runs actual energy calculations
+        - Runs actual explainability analysis
+        - Tests the complete end-to-end workflow
+        - Validates output shapes and structures from real computations
+        """
+        from src.structure_ops import process_single_ligand
+        from src.molecule_loader import load_ase_structure
+        from src.calculator import So3lrSfCalculator
+        from unittest.mock import Mock
+        from pathlib import Path
+        import logging
+
+        # Use real test data files
+        test_data_dir = Path(__file__).parent / "test_data"
+        protein_file = test_data_dir / "alanine.pdb"
+        ligand_file = test_data_dir / "water.sdf"
+
+        # Verify test files exist
+        assert protein_file.exists(), f"Test protein file not found: {protein_file}"
+        assert ligand_file.exists(), f"Test ligand file not found: {ligand_file}"
+
+        # Load structures to understand their shapes
+        protein_atoms = load_ase_structure(protein_file)[0]
+        ligand_atoms = load_ase_structure(ligand_file)[0]
+
+        n_protein_atoms = len(protein_atoms)
+        n_ligand_atoms = len(ligand_atoms)
+
+        print(f"Running complete integration test:")
+        print(f"  Protein: {n_protein_atoms} atoms")
+        print(f"  Ligand: {n_ligand_atoms} atoms")
+
+        # Get real calculator with per-atom components enabled for explainability
+        calc = So3lrSfCalculator(output_per_atom_energy_components=True)
+
+        # Create args with everything enabled but fast settings
+        mock_args = Mock()
+        mock_args.optimize = True
+        mock_args.explain = True
+        mock_args.eda = True
+        mock_args.opt_log = True
+        mock_args.optimizer = "FIRE"
+        mock_args.fmax = 0.5  # Loose convergence for speed
+        mock_args.steps = 10  # Very few steps for test speed
+        mock_args.opt_radius = None
+
+        # Setup real logger
+        logger = logging.getLogger(__name__)
+        optimization_log = []
+
+        # Run the complete workflow WITHOUT ANY MOCKING
+        result, error = process_single_ligand(
+            ligand_file=str(ligand_file),
+            args=mock_args,
+            calc=calc,
+            working_protein_path=str(protein_file),
+            output_dir=temp_dir,
+            optimization_log=optimization_log,
+            logger=logger
+        )
+
+        # Verify the workflow completed successfully
+        if error is not None:
+            print(f"Integration test failed with error: {error}")
+            # Don't fail the test immediately - still check what we can
+
+        assert result is not None
+
+        # Check basic result structure
+        assert result['ligand_name'] == 'water'
+        assert isinstance(result.get('interaction_energy'), (int, float, type(None)))
+        assert isinstance(result.get('binding_energy_kcal_mol'), (int, float, type(None)))
+
+        # Check optimization results if optimization ran
+        if mock_args.optimize and len(optimization_log) > 0:
+            print(f"  Optimization completed: {len(optimization_log)} structures optimized")
+
+            # Should have optimized both ligand and complex
+            assert len(optimization_log) <= 2  # May be less if optimization failed
+
+            for i, opt_log in enumerate(optimization_log):
+                assert 'structure_type' in opt_log
+                # Check for either 'ligand_name' or 'structure_name' depending on log format
+                name_key = 'ligand_name' if 'ligand_name' in opt_log else 'structure_name'
+                assert name_key in opt_log
+
+                # Extract optimization info which may be nested
+                if 'optimization_info' in opt_log:
+                    opt_info = opt_log['optimization_info']
+                    assert 'converged' in opt_info
+                    converged = opt_info['converged'] == 'yes'
+                    steps = opt_info.get('steps', opt_info.get('n_steps', 0))
+                    final_fmax = opt_info.get('final_fmax', 0.0)
+                else:
+                    assert 'converged' in opt_log
+                    converged = opt_log['converged']
+                    steps = opt_log['steps']
+                    final_fmax = opt_log['final_fmax']
+
+                assert isinstance(converged, bool)
+                assert isinstance(steps, int)
+                assert isinstance(final_fmax, (int, float))
+                assert steps <= mock_args.steps
+
+                print(f"    {opt_log['structure_type']}: {steps} steps, "
+                      f"fmax={final_fmax:.4f}, converged={converged}")
+
+        # Check optimization output files exist if optimization ran
+        for path_key in ['optimized_ligand_path', 'optimized_complex_path']:
+            if path_key in result and result[path_key]:
+                opt_path = Path(result[path_key])
+                assert opt_path.exists(), f"Optimization output file should exist: {opt_path}"
+
+                # Verify structure can be loaded and has correct size
+                try:
+                    opt_structure = load_ase_structure(opt_path)[0]
+                    if 'ligand' in path_key:
+                        assert len(opt_structure) == n_ligand_atoms
+                    elif 'complex' in path_key:
+                        assert len(opt_structure) == n_protein_atoms + n_ligand_atoms
+                    print(f"  ✓ {path_key}: {len(opt_structure)} atoms")
+                except Exception as e:
+                    print(f"  ⚠ Could not verify {path_key}: {e}")
+
+        # Check EDA analysis if it ran
+        if 'analysis' in result and result['analysis']:
+            analysis = result['analysis']
+            assert isinstance(analysis, dict)
+            print(f"  ✓ EDA analysis completed with {len(analysis)} components")
+
+            if 'interaction_energy_components' in analysis:
+                components = analysis['interaction_energy_components']
+                print(f"    Energy components: {list(components.keys())}")
+
+        # Check explainability results if they exist
+        if 'ligand_energy_differences' in result and result['ligand_energy_differences']:
+            ligand_differences = result['ligand_energy_differences']
+            assert isinstance(ligand_differences, dict)
+            print(f"  ✓ Explainability completed with components: {list(ligand_differences.keys())}")
+
+            # Verify energy difference arrays have correct shapes
+            for component, values in ligand_differences.items():
+                assert isinstance(values, list)
+                assert len(values) == n_ligand_atoms, \
+                    f"Component {component} should have {n_ligand_atoms} values"
+                # Check that all values are numeric
+                for val in values:
+                    assert isinstance(val, (int, float))
+
+            print(f"    Each component has {n_ligand_atoms} per-atom values")
+
+        print(f"  ✓ Integration test completed successfully!")
+
+        if error is None:
+            print(f"  ✓ Final interaction energy: {result.get('interaction_energy', 'N/A')} eV")

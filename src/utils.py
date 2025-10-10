@@ -10,12 +10,7 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, List, Union
 from ase import Atoms
-from ase.io import read, write
-from rdkit import Chem
-import MDAnalysis as mda
-import prolif as plf
-from .molecule_loader import load_ase_structure
-
+from ase.io import write
 
 def write_structure(atoms: Atoms, file_path: Union[str, Path]) -> str:
     """
@@ -99,43 +94,6 @@ def validate_structure(atoms: Atoms) -> bool:
 #     positions = [[p.x, p.y, p.z] for p in positions]
 #     return Atoms(symbols=symbols, positions=positions)
 
-
-def load_molecule_to_prolif(file_path: Union[str, Path]):
-    """
-    Universal function to load any molecule (protein or ligand) to ProLIF (RDKit) format.
-
-    Supports: PDB, SDF, XYZ formats for both proteins and ligands
-
-    Args:
-        file_path: Path to structure file
-
-    Returns:
-        rdkit.Chem.Mol: RDKit molecule object optimized for ProLIF
-
-    Raises:
-        ValueError: If file format is not supported or molecule cannot be loaded
-    """
-    file_path = Path(file_path)
-    suffix = file_path.suffix.lower()
-
-    if suffix not in ['.pdb', '.sdf', '.xyz']:
-        raise ValueError(f"Unsupported file format: {suffix}. Supported formats: .pdb, .sdf, .xyz")
-
-    # Load RDKit molecule based on format
-    if suffix == '.pdb':
-        mol = Chem.MolFromPDBFile(str(file_path), removeHs=False)
-    elif suffix == '.sdf':
-        mol = Chem.MolFromMolFile(str(file_path))
-    elif suffix == '.xyz':
-        u = mda.Universe(str(file_path))
-        # add "elements" category
-        elements = mda.topology.guessers.guess_types(u.atoms.names)
-        u.add_TopologyAttr("elements", elements)
-        mol = plf.Molecule.from_mda(u)
-    if mol is None:
-        raise ValueError(f"Could not load molecule from {file_path}")
-
-    return mol
 
 
 # def load_molecule_to_rdkit(file_path: Union[str, Path]):

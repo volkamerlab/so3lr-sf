@@ -161,9 +161,22 @@ def main():
 
     try:
         # Validate input files
+        if not args.protein:
+            logger.error("Error: --protein argument is required")
+            sys.exit(1)
+
+        if not args.ligands:
+            logger.error("Error: --ligands argument is required")
+            sys.exit(1)
+
         protein_path = Path(args.protein)
         if not protein_path.exists():
             logger.error(f"Protein file not found: {protein_path}")
+            sys.exit(1)
+
+        ligands_path = Path(args.ligands)
+        if not ligands_path.exists():
+            logger.error(f"Ligands file or directory not found: {ligands_path}")
             sys.exit(1)
 
         logger.info("Starting SO3LR-SF protein-ligand interaction calculation")

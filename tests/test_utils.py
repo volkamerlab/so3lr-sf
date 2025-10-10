@@ -15,12 +15,11 @@ from src.utils import (
     validate_structure,
     write_opt_structure,
     get_ligand_files,
-    load_molecule_to_prolif,
     setup_output_directory,
     save_results,
     setup_logging
 )
-from src.molecule_loader import load_ase_structure
+from src.molecule_loader import load_molecule_to_prolif, load_ase_structure
 
 
 
