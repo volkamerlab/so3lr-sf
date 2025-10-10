@@ -17,7 +17,7 @@ from rdkit.Chem import Draw
 from rdkit.Chem.Draw import SimilarityMaps
 
 
-from .utils import load_molecule_to_prolif
+from .molecule_loader import load_molecule_to_prolif
 
 
 def _similarity_map_gen(mol, weights, cmap="bwr", width=600, height=600, **kwargs):
@@ -173,7 +173,7 @@ def compute_ligand_energy_differences(
         'electrostatic_energy': 'Electrostatics',
         'dispersion_energy': 'Dispersion'
     }
-
+    protein_differences = {}
     ligand_differences = {}
 
     for original_comp, mapped_comp in component_mapping.items():
@@ -188,10 +188,18 @@ def compute_ligand_energy_differences(
             # Calculate difference: complex_ligand - ligand_alone
             ligand_diff = complex_ligand_part - ligand_alone
             ligand_differences[mapped_comp] = ligand_diff
+            
+            # calculate protein energy difference
+            protein_part = complex_components[original_comp][:n_protein_atoms]
+            protein_alone = protein_components[original_comp]
+            protein_diff = protein_part - protein_alone
+            protein_differences[mapped_comp] = protein_diff
 
     # Calculate total as sum of all components
     if ligand_differences:
         ligand_differences['Total'] = sum(ligand_differences.values())
+    if protein_differences:
+        protein_differences['Total'] = sum(protein_differences.values())
 
     # convert the arrays to float lists for JSON serialization
     return {comp: values.tolist() for comp, values in ligand_differences.items()}
