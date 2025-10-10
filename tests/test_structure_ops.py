@@ -482,6 +482,11 @@ class TestExtractLigands:
         for ligand_file in ligand_files:
             assert Path(ligand_file).parent == expected_dir
 
+        # Cleanup created directory
+        import shutil
+        if expected_dir.exists():
+            shutil.rmtree(expected_dir)
+
     @pytest.mark.unit
     def test_extract_ligands_custom_prefix(self, multi_water_file, temp_dir):
         """Test extraction with custom naming prefix."""
