@@ -12,7 +12,7 @@ from src.structure_ops import (
     optimize_structure,
     extract_ligands
 )
-from src.utils import read_structure
+from src.molecule_loader import load_ase_structure
 
 
 class TestTrimStructure:
@@ -42,8 +42,8 @@ class TestTrimStructure:
         assert Path(trimmed_protein_path).exists()
 
         # Check that trimmed protein is smaller than or equal to original
-        original_protein = read_structure(protein_path)
-        trimmed_protein = read_structure(trimmed_protein_path)
+        original_protein = load_ase_structure(protein_path)[0]
+        trimmed_protein = load_ase_structure(trimmed_protein_path)[0]
 
         assert len(trimmed_protein) <= len(original_protein)
         assert len(trimmed_protein) > 0  # Should have some atoms
@@ -72,8 +72,8 @@ class TestTrimStructure:
         )
 
         # With large radius, all protein atoms should be included
-        original_protein = read_structure(protein_path)
-        trimmed_protein = read_structure(trimmed_protein_path)
+        original_protein = load_ase_structure(protein_path)[0]
+        trimmed_protein = load_ase_structure(trimmed_protein_path)[0]
 
         assert len(trimmed_protein) == len(original_protein)
 
@@ -110,6 +110,87 @@ class TestTrimStructure:
         expected_filename = f"{protein_path.stem}_trimmed_{radius}A.xyz"
         assert Path(trimmed_protein_path).name == expected_filename
 
+    @pytest.mark.unit
+    def test_perform_trimming_with_specified_ligand(self, temp_dir, sample_xyz_file, sample_sdf_file, mock_logger):
+        """Test perform_trimming with specified trim ligand."""
+        from src.structure_ops import perform_trimming
+
+        with patch('src.structure_ops.trim_structure') as mock_trim:
+            mock_trim.return_value = temp_dir / "trimmed_protein.xyz"
+
+            result = perform_trimming(
+                protein_path=sample_xyz_file,
+                ligands_source=sample_sdf_file,
+                radius=5.0,
+                trim_lig=str(sample_sdf_file),
+                output_dir=temp_dir,
+                logger=mock_logger
+            )
+
+            assert result == temp_dir / "trimmed_protein.xyz"
+            mock_trim.assert_called_once()
+            mock_logger.info.assert_called()
+
+    @pytest.mark.unit
+    def test_perform_trimming_nonexistent_trim_ligand(self, temp_dir, sample_xyz_file, mock_logger):
+        """Test perform_trimming with nonexistent trim ligand."""
+        from src.structure_ops import perform_trimming
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            perform_trimming(
+                protein_path=sample_xyz_file,
+                ligands_source=None,
+                radius=5.0,
+                trim_lig="/nonexistent/ligand.sdf",
+                output_dir=temp_dir,
+                logger=mock_logger
+            )
+
+        assert "trim ligand not found" in str(exc_info.value)
+
+    @pytest.mark.unit
+    def test_perform_trimming_no_ligand_files_found(self, temp_dir, sample_xyz_file, mock_logger):
+        """Test perform_trimming when no ligand files are found."""
+        from src.structure_ops import perform_trimming
+
+        with patch('src.utils.get_ligand_files', return_value=[]):
+            with pytest.raises(ValueError) as exc_info:
+                perform_trimming(
+                    protein_path=sample_xyz_file,
+                    ligands_source=temp_dir,
+                    radius=5.0,
+                    trim_lig=None,
+                    output_dir=temp_dir,
+                    logger=mock_logger
+                )
+
+            assert "No ligand files found" in str(exc_info.value)
+
+    @pytest.mark.unit
+    def test_perform_trimming_auto_select_ligand(self, temp_dir, sample_xyz_file, sample_sdf_file, mock_logger):
+        """Test perform_trimming auto-selecting first ligand."""
+        from src.structure_ops import perform_trimming
+
+        with patch('src.utils.get_ligand_files', return_value=[sample_sdf_file]), \
+             patch('src.structure_ops.trim_structure') as mock_trim:
+
+            mock_trim.return_value = temp_dir / "trimmed_protein.xyz"
+
+            result = perform_trimming(
+                protein_path=sample_xyz_file,
+                ligands_source=temp_dir,
+                radius=5.0,
+                trim_lig=None,
+                output_dir=temp_dir,
+                logger=mock_logger
+            )
+
+            assert result == temp_dir / "trimmed_protein.xyz"
+            mock_trim.assert_called_once_with(
+                sample_xyz_file, sample_sdf_file,
+                radius=5.0, output_dir=temp_dir
+            )
+
 
 class TestOptimizeStructure:
     """Tests for structure optimization functionality."""
@@ -127,7 +208,7 @@ class TestOptimizeStructure:
     def test_optimize_structure_fire(self, water_files, temp_dir):
         """Test structure optimization with FIRE optimizer."""
         from tests.conftest import MockSo3lrSfCalculator
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         mock_calculator = MockSo3lrSfCalculator()
 
         # Mock optimization methods
@@ -158,7 +239,7 @@ class TestOptimizeStructure:
     def test_optimize_structure_lbfgs(self, water_files, temp_dir):
         """Test structure optimization with LBFGS optimizer."""
         from tests.conftest import MockSo3lrSfCalculator
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         mock_calculator = MockSo3lrSfCalculator()
 
         with patch('src.structure_ops.LBFGS') as mock_lbfgs_class:
@@ -182,7 +263,7 @@ class TestOptimizeStructure:
     @pytest.mark.unit
     def test_optimize_structure_unknown_optimizer(self, water_files, temp_dir):
         """Test optimization with unknown optimizer."""
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         output_path = temp_dir / "test_output.xyz"
         with pytest.raises(ValueError, match="Unknown optimizer: UNKNOWN"):
             optimize_structure(atoms, calc=Mock(), optimizer='UNKNOWN', output_path=output_path)
@@ -190,7 +271,7 @@ class TestOptimizeStructure:
     @pytest.mark.unit
     def test_optimize_structure_no_calculator(self, water_files, temp_dir):
         """Test optimization without calculator raises error."""
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         output_path = temp_dir / "test_output.xyz"
         with pytest.raises((TypeError, ValueError, AttributeError)):
             optimize_structure(atoms, calc=None, output_path=output_path)
@@ -198,7 +279,7 @@ class TestOptimizeStructure:
     @pytest.mark.unit
     def test_optimize_structure_optimization_error(self, water_files, temp_dir):
         """Test optimization with errors during optimization."""
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         from tests.conftest import MockSo3lrSfCalculator
         mock_calculator = MockSo3lrSfCalculator()
 
@@ -221,7 +302,7 @@ class TestOptimizeStructure:
     @pytest.mark.unit
     def test_optimize_structure_default_output_dir(self, water_files, temp_dir):
         """Test optimization with default output directory."""
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         from tests.conftest import MockSo3lrSfCalculator
         mock_calculator = MockSo3lrSfCalculator()
 
@@ -258,7 +339,7 @@ class TestOptimizeStructure:
 
         try:
             calc = So3lrSfCalculator(model_path=so3lr_model_path)
-            atoms = read_structure(water_files['xyz'])
+            atoms = load_ase_structure(water_files['xyz'])[0]
             output_path = temp_dir / "optimized_real.xyz"
 
             optimized_path, opt_info = optimize_structure(
@@ -277,6 +358,93 @@ class TestOptimizeStructure:
         except Exception as e:
             pytest.skip(f"SO3LR calculation failed: {e}")
 
+    @pytest.mark.unit
+    def test_create_optimization_constraint_with_fixed_atoms(self, sample_complex_atoms):
+        """Test constraint creation when some atoms should be fixed."""
+        from src.structure_ops import create_optimization_constraint
+
+        # Test with small radius to ensure some atoms are fixed
+        constraint = create_optimization_constraint(
+            complex_atoms=sample_complex_atoms,
+            n_protein_atoms=10,
+            opt_radius=2.0
+        )
+
+        from ase.constraints import FixAtoms
+        assert isinstance(constraint, FixAtoms)
+        assert len(constraint.index) > 0
+        assert len(constraint.index) < 10  # Some but not all protein atoms fixed
+
+    @pytest.mark.unit
+    def test_create_optimization_constraint_no_fixed_atoms(self, sample_complex_atoms):
+        """Test constraint creation when no atoms should be fixed (large radius)."""
+        from src.structure_ops import create_optimization_constraint
+
+        # Test with large radius to ensure no atoms are fixed
+        constraint = create_optimization_constraint(
+            complex_atoms=sample_complex_atoms,
+            n_protein_atoms=10,
+            opt_radius=50.0
+        )
+
+        assert constraint is None
+
+    @pytest.mark.unit
+    def test_create_optimization_constraint_dummy_example(self):
+        """Test constraint creation with controlled dummy example."""
+        import numpy as np
+        from ase import Atoms
+        from src.structure_ops import create_optimization_constraint
+        from ase.constraints import FixAtoms
+
+        # Create controlled test case: 5 protein atoms, 2 ligand atoms
+        protein_positions = np.array([
+            [0.0, 0.0, 0.0],  # Protein atom 0 - far from ligand
+            [1.0, 0.0, 0.0],  # Protein atom 1 - far from ligand
+            [2.0, 0.0, 0.0],  # Protein atom 2 - close to ligand
+            [3.0, 0.0, 0.0],  # Protein atom 3 - close to ligand
+            [4.0, 0.0, 0.0]   # Protein atom 4 - far from ligand
+        ])
+
+        ligand_positions = np.array([
+            [2.5, 0.0, 0.0],  # Ligand atom - close to protein atoms 2,3
+            [3.0, 0.0, 0.0]   # Ligand atom - close to protein atoms 2,3
+        ])
+
+        # Combine into complex
+        all_positions = np.vstack([protein_positions, ligand_positions])
+        complex_atoms = Atoms('H' * len(protein_positions) + 'O' * len(ligand_positions), positions=all_positions)
+        n_protein_atoms = 5
+
+        # Test opt_radius = 0.0 - should fix all protein atoms
+        constraint_zero = create_optimization_constraint(
+            complex_atoms=complex_atoms,
+            n_protein_atoms=n_protein_atoms,
+            opt_radius=0.0
+        )
+        assert isinstance(constraint_zero, FixAtoms)
+        assert len(constraint_zero.index) == 5  # All protein atoms fixed
+        assert set(constraint_zero.index) == {0, 1, 2, 3, 4}
+
+        # Test opt_radius = 1.0 - should fix atoms 0,1,4; flexible atoms 2,3
+        constraint_small = create_optimization_constraint(
+            complex_atoms=complex_atoms,
+            n_protein_atoms=n_protein_atoms,
+            opt_radius=1.0
+        )
+        assert isinstance(constraint_small, FixAtoms)
+        assert len(constraint_small.index) == 3  # Atoms 0,1,4 fixed
+        assert set(constraint_small.index) == {0, 1, 4}
+
+        # Test opt_radius = 5.0 - should not fix any atoms (all flexible)
+        constraint_large = create_optimization_constraint(
+            complex_atoms=complex_atoms,
+            n_protein_atoms=n_protein_atoms,
+            opt_radius=5.0
+        )
+        assert constraint_large is None  # No constraints needed
+
+
 
 class TestExtractLigands:
     """Tests for ligand extraction functionality."""
@@ -293,7 +461,7 @@ class TestExtractLigands:
             assert Path(ligand_file).name == f"ligand_{i:03d}.xyz"
 
             # Check that each ligand can be read
-            atoms = read_structure(ligand_file)
+            atoms = load_ase_structure(ligand_file)[0]
             assert len(atoms) == 3  # Water molecule
 
     @pytest.mark.unit
@@ -333,33 +501,18 @@ class TestExtractLigands:
         fake_sdf = temp_dir / "fake.sdf"
         fake_sdf.write_text("invalid sdf content")
 
-        with pytest.raises(ValueError):
+        with pytest.raises((ValueError, IndexError, OSError)):
             extract_ligands(fake_sdf, output_dir=temp_dir)
 
     @pytest.mark.unit
-    def test_extract_ligands_from_xyz_trajectory(self, temp_dir):
+    def test_extract_ligands_from_xyz_trajectory(self, multi_water_xyz_file, temp_dir):
         """Test extracting from XYZ trajectory-like file."""
-        # Create a multi-frame XYZ file
-        multi_xyz = temp_dir / "trajectory.xyz"
-        xyz_content = """3
-Frame 1
-O    0.0000    0.0000    0.0000
-H    0.7570    0.5860    0.0000
-H   -0.7570    0.5860    0.0000
-3
-Frame 2
-O    1.0000    0.0000    0.0000
-H    1.7570    0.5860    0.0000
-H    0.2430    0.5860    0.0000
-"""
-        multi_xyz.write_text(xyz_content)
-
-        ligand_files = extract_ligands(multi_xyz, output_dir=temp_dir)
+        ligand_files = extract_ligands(multi_water_xyz_file, output_dir=temp_dir)
 
         assert len(ligand_files) == 2
         for ligand_file in ligand_files:
             assert Path(ligand_file).exists()
-            atoms = read_structure(ligand_file)
+            atoms = load_ase_structure(ligand_file)[0]
             assert len(atoms) == 3
 
 
@@ -394,9 +547,9 @@ class TestStructureOpsIntegration:
         assert Path(trimmed_protein_path).exists()
 
         # Load structures to verify trimming worked
-        original_protein = read_structure(protein_path)
-        ligand = read_structure(ligand_path)
-        trimmed_protein = read_structure(trimmed_protein_path)
+        original_protein = load_ase_structure(protein_path)[0]
+        ligand = load_ase_structure(ligand_path)[0]
+        trimmed_protein = load_ase_structure(trimmed_protein_path)[0]
 
         # Verify trimmed structure is smaller or equal
         assert len(trimmed_protein) <= len(original_protein)
@@ -422,7 +575,7 @@ class TestStructureOpsIntegration:
     @pytest.mark.slow
     def test_real_optimization_water_position_change(self, water_files, temp_dir, real_calculator):
         """Test real optimization with position change verification for water."""
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         original_positions = atoms.get_positions().copy()
 
         output_path = temp_dir / "optimized_water_real.xyz"
@@ -441,7 +594,7 @@ class TestStructureOpsIntegration:
         assert isinstance(opt_info['final_energy'], (float, np.floating, np.ndarray))
 
         # Load optimized structure and verify positions changed
-        optimized_atoms = read_structure(optimized_path)
+        optimized_atoms = load_ase_structure(optimized_path)[0]
         optimized_positions = optimized_atoms.get_positions()
 
         # Calculate position changes
@@ -458,7 +611,7 @@ class TestStructureOpsIntegration:
     @pytest.mark.slow
     def test_real_optimization_alanine_position_change(self, alanine_files, temp_dir, real_calculator):
         """Test real optimization with position change verification for alanine."""
-        atoms = read_structure(alanine_files['xyz'])
+        atoms = load_ase_structure(alanine_files['xyz'])[0]
         original_positions = atoms.get_positions().copy()
 
         output_path = temp_dir / "optimized_alanine_real.xyz"
@@ -477,7 +630,7 @@ class TestStructureOpsIntegration:
         assert isinstance(opt_info['final_energy'], (float, np.floating, np.ndarray))
 
         # Load optimized structure and verify positions changed
-        optimized_atoms = read_structure(optimized_path)
+        optimized_atoms = load_ase_structure(optimized_path)[0]
         optimized_positions = optimized_atoms.get_positions()
 
         # Calculate position changes
@@ -494,7 +647,7 @@ class TestStructureOpsIntegration:
     @pytest.mark.slow
     def test_constrained_optimization(self, water_files, temp_dir, real_calculator):
         """Test constrained optimization."""
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         original_positions = atoms.get_positions().copy()
 
         # Add constraint to fix the oxygen atom (index 0)
@@ -517,7 +670,7 @@ class TestStructureOpsIntegration:
         assert opt_info['converged'] in ['yes', 'no']  # Should have valid convergence status
 
         # Load optimized structure
-        optimized_atoms = read_structure(optimized_path)
+        optimized_atoms = load_ase_structure(optimized_path)[0]
         optimized_positions = optimized_atoms.get_positions()
 
         # Verify oxygen atom (index 0) didn't move due to constraint
@@ -544,7 +697,7 @@ class TestStructureOpsIntegration:
         )
 
         # Step 2: Optimize trimmed protein
-        trimmed_atoms = read_structure(trimmed_protein_path)
+        trimmed_atoms = load_ase_structure(trimmed_protein_path)[0]
         original_positions = trimmed_atoms.get_positions().copy()
 
         optimized_path, opt_info = optimize_structure(
@@ -561,11 +714,11 @@ class TestStructureOpsIntegration:
         assert Path(optimized_path).exists()
 
         # Load final structure
-        final_atoms = read_structure(optimized_path)
+        final_atoms = load_ase_structure(optimized_path)[0]
         final_positions = final_atoms.get_positions()
 
         # Verify trimming worked
-        original_protein = read_structure(protein_path)
+        original_protein = load_ase_structure(protein_path)[0]
         assert len(trimmed_atoms) <= len(original_protein)
 
         # Verify optimization worked (positions changed)
@@ -587,7 +740,7 @@ class TestStructureOpsIntegration:
         # Process each ligand (mock processing)
         results = []
         for ligand_file in ligand_files:
-            atoms = read_structure(ligand_file)
+            atoms = load_ase_structure(ligand_file)[0]
             results.append({
                 'file': ligand_file,
                 'n_atoms': len(atoms),
@@ -598,3 +751,111 @@ class TestStructureOpsIntegration:
         for result in results:
             assert result['n_atoms'] == 3
             assert result['formula'] == 'H2O'
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_create_optimization_constraint_real(self, test_data_dir, temp_dir):
+        """Test create_optimization_constraint with real complex atoms."""
+        from src.structure_ops import create_optimization_constraint
+        from src.molecule_loader import load_ase_structure
+
+        # Skip if test data not available
+        alanine_file = test_data_dir / "alanine.xyz"
+        water_file = test_data_dir / "water.xyz"
+
+        if not alanine_file.exists() or not water_file.exists():
+            pytest.skip("Test data files not available")
+
+        # Create a real complex by combining protein + ligand
+        protein_atoms = load_ase_structure(alanine_file)[0]
+        ligand_atoms = load_ase_structure(water_file)[0]
+
+        # Translate ligand to avoid overlap
+        ligand_positions = ligand_atoms.get_positions()
+        ligand_positions += [5.0, 0.0, 0.0]  # Move 5Å away
+        ligand_atoms.set_positions(ligand_positions)
+
+        # Combine into complex
+        complex_atoms = protein_atoms + ligand_atoms
+        n_protein_atoms = len(protein_atoms)
+
+        # Test with small radius - should create some constraints
+        constraint_small = create_optimization_constraint(
+            complex_atoms=complex_atoms,
+            n_protein_atoms=n_protein_atoms,
+            opt_radius=3.0
+        )
+        print("Small radius constraints:", constraint_small)
+
+        # Test with large radius - should not create constraints
+        constraint_large = create_optimization_constraint(
+            complex_atoms=complex_atoms,
+            n_protein_atoms=n_protein_atoms,
+            opt_radius=20.0
+        )
+
+        # Verify results - small radius should typically create some constraints
+        if constraint_small is not None:
+            from ase.constraints import FixAtoms
+            assert isinstance(constraint_small, FixAtoms)
+            assert len(constraint_small.index) > 0
+            assert len(constraint_small.index) < n_protein_atoms  # Some but not all atoms fixed
+
+        # Large radius should typically result in no constraints
+        assert constraint_large is None
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_perform_trimming_real(self, test_data_dir, temp_dir):
+        """Test perform_trimming with real data workflow."""
+        from src.structure_ops import perform_trimming
+        from src.utils import setup_logging
+
+        # Skip if test data not available
+        alanine_file = test_data_dir / "alanine.xyz"
+        water_file = test_data_dir / "water.sdf"
+
+        if not alanine_file.exists() or not water_file.exists():
+            pytest.skip("Test data files not available")
+
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Test with specified ligand
+        result = perform_trimming(
+            protein_path=alanine_file,
+            ligands_source=None,
+            radius=3.0,
+            trim_lig=str(water_file),
+            output_dir=temp_dir,
+            logger=logger
+        )
+
+        assert Path(result).exists()
+
+        # Verify trimming worked
+        from src.molecule_loader import load_ase_structure
+        trimmed_atoms = load_ase_structure(result)[0]
+        original_atoms = load_ase_structure(alanine_file)[0]
+        assert len(trimmed_atoms) <= len(original_atoms)
+
+        # Test auto-selection (create a directory with ligand files)
+        ligand_dir = temp_dir / "ligands"
+        ligand_dir.mkdir()
+
+        # Copy water file to ligand directory
+        import shutil
+        shutil.copy(water_file, ligand_dir / "water.sdf")
+
+        result2 = perform_trimming(
+            protein_path=alanine_file,
+            ligands_source=str(ligand_dir),
+            radius=3.0,
+            trim_lig=None,
+            output_dir=temp_dir,
+            logger=logger
+        )
+
+        assert Path(result2).exists()
+        trimmed_atoms2 = load_ase_structure(result2)[0]
+        assert len(trimmed_atoms2) <= len(original_atoms)

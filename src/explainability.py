@@ -17,7 +17,7 @@ from rdkit.Chem import Draw
 from rdkit.Chem.Draw import SimilarityMaps
 
 
-from .utils import read_xyz_with_bonds, load_molecule_to_rdkit
+from .utils import load_molecule_to_prolif
 
 
 def _similarity_map_gen(mol, weights, cmap="bwr", width=600, height=600, **kwargs):
@@ -77,7 +77,7 @@ def generate_interaction_heatmap(
     ligand_path = Path(ligand_path)
     print(f"Generating heatmap for ligand: {ligand_path}")
     # Read ligand molecule for visualization using universal function
-    mol = load_molecule_to_rdkit(ligand_path)
+    mol = load_molecule_to_prolif(ligand_path)
 
     if mol is None:
         raise ValueError(f"Could not read molecule from {ligand_path}")

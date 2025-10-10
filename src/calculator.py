@@ -10,7 +10,8 @@ from typing import Optional, Dict, Any, Union
 from ase import Atoms
 from mlff.md.calculator_sparse import mlffCalculatorSparse
 
-from .utils import read_structure, validate_structure
+from .utils import validate_structure
+from .molecule_loader import load_ase_structure
 from .config import get_default_model_path
 
 
@@ -146,7 +147,7 @@ class So3lrSfCalculator:
             >>> print(f"Potential energy: {energy:.3f} eV")
         """
         if isinstance(atoms, (str, Path)):
-            atoms = read_structure(atoms)
+            atoms = load_ase_structure(atoms)[0]
 
         validate_structure(atoms)
 

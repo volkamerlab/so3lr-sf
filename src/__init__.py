@@ -41,7 +41,6 @@ from .structure_ops import (
 )
 
 from .utils import (
-    read_structure,
     write_structure,
     get_supported_formats,
     validate_structure

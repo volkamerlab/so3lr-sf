@@ -5,145 +5,32 @@ This module contains utility functions for model detection, structure reading,
 and file handling operations.
 """
 
-import json
 import logging
-import tempfile
 import numpy as np
 from pathlib import Path
 from typing import Optional, List, Union
 from ase import Atoms
 from ase.io import read, write
 from rdkit import Chem
-from rdkit.Chem import rdDetermineBonds, rdCoordGen
+import MDAnalysis as mda
+import prolif as plf
+from .molecule_loader import load_ase_structure
 
 
-
-def _read_multi_sdf_blocks(file_path: Path) -> List[Atoms]:
-    """
-    Read multiple structures from SDF file by splitting on $$$$ delimiters.
-
-    Args:
-        file_path: Path to SDF file
-
-    Returns:
-        List[Atoms]: List of structures from the SDF file
-    """
-    import tempfile
-    structures = []
-
-    with open(file_path, 'r') as f:
-        content = f.read()
-
-    # Split by $$$$ delimiter and filter empty blocks
-    sdf_blocks = [block.strip() for block in content.split('$$$$') if block.strip()]
-
-    for i, block in enumerate(sdf_blocks):
-        # Create temporary SDF file for this block
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.sdf', delete=False) as temp_f:
-            temp_f.write(block + '\n$$$$\n')
-            temp_file = temp_f.name
-
-        try:
-            # Read this single molecule with ASE
-            atoms = read(temp_file, format='sdf')
-            structures.append(atoms)
-        except Exception as e:
-            print(f"Warning: Could not read SDF block {i+1}: {e}")
-        finally:
-            # Clean up temp file
-            Path(temp_file).unlink(missing_ok=True)
-
-    return structures
-
-
-def read_structure(file_path: Union[str, Path], index: Union[int, str] = 0) -> Union[Atoms, List[Atoms]]:
-    """
-    Read molecular structure from various file formats with multi-structure support.
-
-    Supports multiple molecular file formats commonly used in computational chemistry:
-    PDB, XYZ, SDF, MOL2, and other formats supported by ASE. Can handle files with
-    multiple structures (like multi-frame XYZ or multi-molecule SDF files).
-
-    Args:
-        file_path: Path to structure file
-        index: Structure index to read:
-               - int: specific structure (0 for first)
-               - ':' or 'all': all structures
-               - '-1': last structure
-
-    Returns:
-        Atoms or List[Atoms]: Single structure or list of structures
-
-    Raises:
-        FileNotFoundError: If the file doesn't exist
-        ValueError: If the file format is not supported or structure is invalid
-
-    Example:
-        >>> # Read single structure
-        >>> atoms = read_structure("protein.pdb")
-        >>>
-        >>> # Read all ligands from multi-molecule SDF
-        >>> all_ligands = read_structure("ligands.sdf", index=":")
-        >>>
-        >>> # Read last frame from trajectory
-        >>> final_structure = read_structure("trajectory.xyz", index=-1)
-    """
-    file_path = Path(file_path)
-
-    if not file_path.exists():
-        raise FileNotFoundError(f"Structure file not found: {file_path}")
-
-    try:
-        # Special handling for multi-molecule SDF files
-        if file_path.suffix.lower() == '.sdf' and (index == "all" or index == ":"):
-            with open(file_path, 'r') as f:
-                content = f.read()
-
-            # Check if this is a multi-molecule SDF (multiple $$$$ delimiters)
-            if content.count('$$$$') > 1:
-                structures = _read_multi_sdf_blocks(file_path)
-                if len(structures) == 0:
-                    raise ValueError(f"No valid structures found in {file_path}")
-                return structures
-
-        # Handle different index types for non-SDF or single-molecule cases
-        if index == "all" or index == ":":
-            read_index = ":"
-        else:
-            read_index = index
-
-        # Try reading with ASE's automatic format detection
-        result = read(str(file_path), index=read_index)
-
-        # Handle single vs multiple structures
-        if isinstance(result, list):
-            if len(result) == 0:
-                raise ValueError(f"Structure file {file_path} contains no atoms")
-            return result
-        else:
-            if len(result) == 0:
-                raise ValueError(f"Structure file {file_path} contains no atoms")
-            return result
-
-    except Exception as e:
-        raise ValueError(f"Could not read structure from {file_path}: {e}")
-
-
-def write_structure(atoms: Atoms, file_path: Union[str, Path], format: Optional[str] = None) -> str:
+def write_structure(atoms: Atoms, file_path: Union[str, Path]) -> str:
     """
     Write molecular structure to file.
 
     Args:
         atoms: ASE Atoms object to write
-        file_path: Output file path
-        format: File format (auto-detected from extension if None)
+        file_path: Output file path (format auto-detected from extension)
 
     Returns:
         str: Path to written file
 
     Example:
         >>> write_structure(atoms, "output.xyz")
-        >>> write_structure(atoms, "output.pdb", format="pdb")
+        >>> write_structure(atoms, "output.pdb")
     """
     file_path = Path(file_path)
 
@@ -151,7 +38,7 @@ def write_structure(atoms: Atoms, file_path: Union[str, Path], format: Optional[
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        write(str(file_path), atoms, format=format)
+        write(str(file_path), atoms)
         return str(file_path)
     except Exception as e:
         raise RuntimeError(f"Failed to write structure to {file_path}: {e}")
@@ -196,66 +83,34 @@ def validate_structure(atoms: Atoms) -> bool:
     return True
 
 
-def read_xyz_with_bonds(file_path: Union[str, Path]):
+# def rdkit_to_ase(mol):
+#     """
+#     Convert RDKit molecule to ASE Atoms object.
+
+#     Args:
+#         mol: RDKit molecule object
+
+#     Returns:
+#         Atoms: ASE Atoms object
+#     """
+#     conf = mol.GetConformer()
+#     symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
+#     positions = [conf.GetAtomPosition(i) for i in range(mol.GetNumAtoms())]
+#     positions = [[p.x, p.y, p.z] for p in positions]
+#     return Atoms(symbols=symbols, positions=positions)
+
+
+def load_molecule_to_prolif(file_path: Union[str, Path]):
     """
-    Read XYZ file and determine bonds using RDKit.
+    Universal function to load any molecule (protein or ligand) to ProLIF (RDKit) format.
 
-    Args:
-        file_path: Path to XYZ file
-
-    Returns:
-        rdkit.Chem.Mol: RDKit molecule object with bonds determined
-    """
-    mol = Chem.MolFromXYZFile(str(file_path))
-    if mol is None:
-        raise ValueError(f"Could not read molecule from {file_path}")
-
-    # Try different charges to determine bonds
-    bond_determined = False
-    for charge in range(-2, 3):
-        try:
-            rdDetermineBonds.DetermineBonds(mol, charge=charge)
-            bond_determined = True
-            break
-        except (ValueError, RuntimeError):
-            continue
-
-    if not bond_determined:
-        # Fallback: use connectivity based on distance
-        from rdkit.Chem import AllChem
-        AllChem.ConnectTheMolecule(mol)
-
-    # Ensure molecule has proper 2D/3D coordinates
-    try:
-        rdCoordGen.AddCoords(mol)
-    except:
-        # If 2D coord gen fails, molecule already has 3D coords
-        pass
-
-    # Sanitize molecule for ProLIF
-    try:
-        Chem.SanitizeMol(mol)
-    except:
-        # Partial sanitization if full fails
-        try:
-            Chem.SanitizeMol(mol, Chem.SANITIZE_ALL ^ Chem.SANITIZE_PROPERTIES)
-        except:
-            pass
-
-    return mol
-
-
-def load_molecule_to_rdkit(file_path: Union[str, Path]):
-    """
-    Universal function to load any molecule (protein or ligand) to RDKit format.
-
-    Supports: PDB, SDF, XYZ formats
+    Supports: PDB, SDF, XYZ formats for both proteins and ligands
 
     Args:
         file_path: Path to structure file
 
     Returns:
-        rdkit.Chem.Mol: RDKit molecule object
+        rdkit.Chem.Mol: RDKit molecule object optimized for ProLIF
 
     Raises:
         ValueError: If file format is not supported or molecule cannot be loaded
@@ -263,20 +118,58 @@ def load_molecule_to_rdkit(file_path: Union[str, Path]):
     file_path = Path(file_path)
     suffix = file_path.suffix.lower()
 
+    if suffix not in ['.pdb', '.sdf', '.xyz']:
+        raise ValueError(f"Unsupported file format: {suffix}. Supported formats: .pdb, .sdf, .xyz")
+
     # Load RDKit molecule based on format
     if suffix == '.pdb':
         mol = Chem.MolFromPDBFile(str(file_path), removeHs=False)
     elif suffix == '.sdf':
         mol = Chem.MolFromMolFile(str(file_path))
     elif suffix == '.xyz':
-        mol = read_xyz_with_bonds(file_path)
-    else:
-        raise ValueError(f"Unsupported file format: {suffix}. Supported formats: .pdb, .sdf, .xyz")
-
+        u = mda.Universe(str(file_path))
+        # add "elements" category
+        elements = mda.topology.guessers.guess_types(u.atoms.names)
+        u.add_TopologyAttr("elements", elements)
+        mol = plf.Molecule.from_mda(u)
     if mol is None:
         raise ValueError(f"Could not load molecule from {file_path}")
 
     return mol
+
+
+# def load_molecule_to_rdkit(file_path: Union[str, Path]):
+#     """
+#     Universal function to load any molecule (protein or ligand) to RDKit format.
+
+#     Supports: PDB, SDF, XYZ formats
+
+#     Args:
+#         file_path: Path to structure file
+
+#     Returns:
+#         rdkit.Chem.Mol: RDKit molecule object
+
+#     Raises:
+#         ValueError: If file format is not supported or molecule cannot be loaded
+#     """
+#     file_path = Path(file_path)
+#     suffix = file_path.suffix.lower()
+
+#     # Load RDKit molecule based on format
+#     if suffix == '.pdb':
+#         mol = Chem.MolFromPDBFile(str(file_path), removeHs=False)
+#     elif suffix == '.sdf':
+#         mol = Chem.MolFromMolFile(str(file_path))
+#     elif suffix == '.xyz':
+#         mol = read_xyz_with_bonds(file_path)
+#     else:
+#         raise ValueError(f"Unsupported file format: {suffix}. Supported formats: .pdb, .sdf, .xyz")
+
+#     if mol is None:
+#         raise ValueError(f"Could not load molecule from {file_path}")
+
+#     return mol
 
 
 def get_ligand_files(ligands_input: str, output_dir: Optional[Union[str, Path]] = None) -> List[str]:
@@ -298,7 +191,7 @@ def get_ligand_files(ligands_input: str, output_dir: Optional[Union[str, Path]] 
 
     if ligands_path.is_file():
         # Check if it's a multi-structure file (SDF or XYZ)
-        if ligands_path.suffix.lower() in ['.sdf', '.xyz']:
+        if ligands_path.suffix.lower() in ['.sdf', '.xyz', '.pdb']:
             try:
                 # Try to extract multiple ligands
                 from .structure_ops import extract_ligands

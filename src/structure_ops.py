@@ -13,9 +13,10 @@ from ase.optimize import FIRE, LBFGS
 from ase.neighborlist import neighbor_list
 from ase.constraints import FixAtoms
 
-from .utils import read_structure, write_structure, validate_structure
+from .utils import write_structure, write_opt_structure
+from .molecule_loader import load_ase_structure
 from .calculator import So3lrSfCalculator
-
+from .interaction_energy import protein_ligand_interaction
 
 def trim_structure(
     protein_path: Union[str, Path],
@@ -31,8 +32,8 @@ def trim_structure(
     file and can be used for more efficient calculations on large protein-ligand systems.
 
     Args:
-        protein_path: Path to protein structure file (PDB, XYZ, etc.)
-        ligand_path: Path to ligand structure file
+        protein_path: Path to protein structure file (PDB, XYZ, SDF)
+        ligand_path: Path to ligand structure file to trim around (PDB, XYZ, SDF)
         radius: Radius in Angstroms for trimming around ligand
         output_dir: Directory to save trimmed structures (default: same as protein)
 
@@ -64,12 +65,8 @@ def trim_structure(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     # Read structures
-    protein = read_structure(protein_path)
-    ligand = read_structure(ligand_path)
-
-    # Validate structures
-    validate_structure(protein)
-    validate_structure(ligand)
+    protein = load_ase_structure(protein_path)[0]
+    ligand = load_ase_structure(ligand_path)[0]
 
     # Get positions
     protein_positions = protein.get_positions()
@@ -214,13 +211,9 @@ def optimize_structure(
 
     Example:
         >>> calc = So3lrSfCalculator()
-        >>> atoms = read_structure("ligand.xyz")
+        >>> atoms = load_ase_structure("ligand.xyz")
         >>> opt_path, info = optimize_structure(atoms, calc, output_filename="ligand_opt.xyz")
     """
-
-    # Validate input atoms
-    validate_structure(atoms)
-
     # Set output directory
     if output_path.is_file():
         # return the path if it's already a file
@@ -368,7 +361,7 @@ def extract_ligands(
     naming_prefix: str = "ligand"
 ) -> List[str]:
     """
-    Extract individual ligands from multi-structure files (SDF, XYZ with multiple frames).
+    Extract individual ligands from multi-structure files (SDF, XYZ, PDB with multiple structures).
 
     This function reads a file containing multiple structures and saves each one
     as a separate XYZ file for individual processing.
@@ -398,16 +391,11 @@ def extract_ligands(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Read all structures
-    structures = read_structure(multi_structure_file, index=":")
-
-    # Handle case where only one structure is present
-    if not isinstance(structures, list):
-        structures = [structures]
+    structures = load_ase_structure(multi_structure_file, index=":")
 
     output_files = []
 
     for i, atoms in enumerate(structures):
-        validate_structure(atoms)
 
         # Generate filename
         output_filename = f"{naming_prefix}_{i+1:03d}.xyz"
@@ -425,10 +413,9 @@ def extract_ligands(
 def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_dir,
                     optimization_log, opt_log, logger):
     """Optimize protein structure."""
-    from .utils import read_structure
 
     logger.info("Optimizing protein...")
-    protein_atoms = read_structure(working_protein_path)
+    protein_atoms = load_ase_structure(working_protein_path)[0]
 
     protein_path = Path(working_protein_path)
     output_path = output_dir / f"{protein_path.stem}_opt.xyz"
@@ -451,8 +438,6 @@ def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_
 
 def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger):
     """Process a single ligand through the workflow."""
-    from .utils import read_structure, write_structure, write_opt_structure
-    from .interaction_energy import protein_ligand_interaction
 
     ligand_path = Path(ligand_file)
     ligand_name = ligand_path.stem
@@ -464,7 +449,7 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
         # Optimize ligand if requested
         if args.optimize:
             logger.info(f"Optimizing ligand: {ligand_name}")
-            ligand_atoms = read_structure(ligand_file)
+            ligand_atoms = load_ase_structure(ligand_file)[0]
             working_ligand_path, ligand_opt_info = optimize_structure(
                 ligand_atoms, calc,
                 optimizer=args.optimizer, fmax=args.fmax, steps=args.steps,
@@ -480,8 +465,8 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
 
             # Build and optimize complex
             logger.info(f"Building and optimizing complex: {ligand_name}")
-            protein_atoms = read_structure(working_protein_path)
-            ligand_atoms = read_structure(working_ligand_path)
+            protein_atoms = load_ase_structure(working_protein_path)[0]
+            ligand_atoms = load_ase_structure(working_ligand_path)[0]
             complex_atoms = protein_atoms + ligand_atoms
 
             working_complex_path, complex_opt_info = optimize_structure(
@@ -499,7 +484,7 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
                 })
 
             # Extract optimized parts
-            optimized_complex_atoms = read_structure(working_complex_path)
+            optimized_complex_atoms = load_ase_structure(working_complex_path)[0]
             n_protein_atoms = len(protein_atoms)
 
             optimized_protein_atoms = optimized_complex_atoms[:n_protein_atoms]

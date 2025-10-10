@@ -26,7 +26,7 @@ from rdkit.Geometry import Point2D
 import prolif as plf
 from prolif.plotting.network import LigNetwork
 
-from .utils import read_structure, write_structure, load_molecule_to_rdkit
+from .utils import write_structure, load_molecule_to_rdkit
 
 
 def prepare_protein_ligand_for_prolif(

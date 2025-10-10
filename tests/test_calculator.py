@@ -4,7 +4,7 @@ Tests for the calculator module.
 
 import pytest
 import numpy as np
-from src.utils import read_structure
+from src.molecule_loader import load_ase_structure
 from src.calculator import So3lrSfCalculator
 
 class TestSo3lrSfCalculator:
@@ -70,7 +70,7 @@ class TestSo3lrSfCalculator:
     def test_calculate_energy_basic(self, water_files, mock_calculator):
         """Test basic energy calculation with mock."""
         # Use the mock calculator directly from the fixture
-        atoms = read_structure(water_files['xyz'])
+        atoms = load_ase_structure(water_files['xyz'])[0]
         energy = mock_calculator.calculate_energy(atoms)
 
         # Mock calculator returns -100.0
@@ -135,7 +135,7 @@ class TestSo3lrSfCalculator:
         """Test real energy calculation on water molecule."""
         try:
 
-            atoms = read_structure(water_files['xyz'])
+            atoms = load_ase_structure(water_files['xyz'])[0]
 
             energy = real_calculator.calculate_energy(atoms)
 
@@ -155,7 +155,7 @@ class TestSo3lrSfCalculator:
     def test_calculator_real_energy_alanine(self, alanine_files, real_calculator):
         """Test real energy calculation on alanine molecule."""
         try:
-            atoms = read_structure(alanine_files['xyz'])
+            atoms = load_ase_structure(alanine_files['xyz'])[0]
             energy = real_calculator.calculate_energy(atoms)
 
             # Alanine energy should be more negative than water (larger molecule)
@@ -173,8 +173,8 @@ class TestSo3lrSfCalculator:
     def test_calculator_energy_comparison(self, water_files, alanine_files, real_calculator):
         """Test that larger molecules have more negative energies."""
         try:
-            water_atoms = read_structure(water_files['xyz'])
-            alanine_atoms = read_structure(alanine_files['xyz'])
+            water_atoms = load_ase_structure(water_files['xyz'])[0]
+            alanine_atoms = load_ase_structure(alanine_files['xyz'])[0]
 
             water_energy = real_calculator.calculate_energy(water_atoms)
             alanine_energy = real_calculator.calculate_energy(alanine_atoms)
@@ -205,7 +205,7 @@ class TestSo3lrSfCalculator:
                 output_per_atom_energy_components=True
             )
 
-            atoms = read_structure(water_files['xyz'])
+            atoms = load_ase_structure(water_files['xyz'])[0]
             energy = calc.calculate_energy(atoms)
             components = calc.get_per_atom_energy_components()
 

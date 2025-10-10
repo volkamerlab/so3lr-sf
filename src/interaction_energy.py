@@ -13,7 +13,7 @@ from typing import Union, Optional, Dict, Any, Tuple
 from ase import Atoms
 
 from .calculator import So3lrSfCalculator
-from .utils import read_structure
+from .molecule_loader import load_ase_structure
 from .explainability import compute_ligand_energy_differences, generate_interaction_heatmap
 
 
@@ -36,17 +36,17 @@ def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, P
 
     # Read structures
     logger.debug("Reading protein structure...")
-    protein_atoms = read_structure(protein_path)
+    protein_atoms = load_ase_structure(protein_path)[0]
     logger.debug(f"Protein loaded: {len(protein_atoms)} atoms")
 
     logger.debug("Reading ligand structure...")
-    ligand_atoms = read_structure(ligand_path)
+    ligand_atoms = load_ase_structure(ligand_path)[0]
     logger.debug(f"Ligand loaded: {len(ligand_atoms)} atoms")
 
     # Use provided complex or create by concatenating protein and ligand
     if complex_path:
         logger.info(f"Using pre-built complex from: {complex_path}")
-        complex_atoms = read_structure(complex_path)
+        complex_atoms = load_ase_structure(complex_path)[0]
         logger.info(f"Complex loaded: {len(complex_atoms)} total atoms")
 
         # Validate complex structure

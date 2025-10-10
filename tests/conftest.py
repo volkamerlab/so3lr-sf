@@ -239,6 +239,35 @@ def multi_water_file(test_data_dir):
 
 
 @pytest.fixture
+def multi_water_mol_file(test_data_dir):
+    """Get multi-water MOL file from test_data directory."""
+    multi_file = test_data_dir / "multi_water.mol"
+    if not multi_file.exists():
+        pytest.skip("multi_water.mol not found in test_data")
+    return multi_file
+
+
+@pytest.fixture
+def multi_water_xyz_file(test_data_dir):
+    """Get multi-water XYZ file from test_data directory."""
+    multi_file = test_data_dir / "multi_water.xyz"
+    if not multi_file.exists():
+        pytest.skip("multi_water.xyz not found in test_data")
+    return multi_file
+
+
+
+
+@pytest.fixture
+def multi_water_pdb_file(test_data_dir):
+    """Get multi-water PDB file from test_data directory."""
+    multi_file = test_data_dir / "multi_water.pdb"
+    if not multi_file.exists():
+        pytest.skip("multi_water.pdb not found in test_data")
+    return multi_file
+
+
+@pytest.fixture
 def alanine_files(test_data_dir):
     """Get alanine molecule files from test_data directory."""
     files = {}
