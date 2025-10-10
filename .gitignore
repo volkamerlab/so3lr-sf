@@ -12,3 +12,6 @@ htmlcov/
 .coverage
 *.cover
 .pytest_cache/
+protein_ligand_analyzer/*
+example*
+debug*

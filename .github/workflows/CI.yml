@@ -10,6 +10,12 @@ on:
 
 env:
   PYTHON_VERSION: '3.12'
+  # Optimization environment variables
+  PIP_CACHE_DIR: ~/.cache/pip
+  POETRY_CACHE_DIR: ~/.cache/pypoetry
+  JAX_ENABLE_X64: true
+  JAX_PLATFORM_NAME: cpu
+  TF_CPP_MIN_LOG_LEVEL: 2
 
 jobs:
   test:
@@ -29,6 +35,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
@@ -37,19 +44,42 @@ jobs:
           virtualenvs-create: true
           virtualenvs-in-project: true
 
-      - name: Cache Poetry dependencies
+      - name: Cache Poetry dependencies and installations
         uses: actions/cache@v4
+        id: cache-poetry
         with:
-          path: .venv
-          key: poetry-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          path: |
+            .venv
+            ~/.cache/pypoetry
+            ~/.cache/pip
+            ~/.cache/huggingface
+            ~/.jax_cache
+            ~/.tensorflow
+            ~/.keras
+            ~/.cache/git
+            ~/.gitconfig
+          key: poetry-full-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', '**/poetry.lock') }}
           restore-keys: |
+            poetry-full-${{ runner.os }}-${{ matrix.python-version }}-
             poetry-${{ runner.os }}-${{ matrix.python-version }}-
 
       - name: Install dependencies
         run: |
-          poetry install --with test
+          # Use --no-dev flag to skip development dependencies if they're not needed
+          poetry install --with test --no-interaction --no-ansi
+
+      - name: Cache SO3LR model files
+        uses: actions/cache@v4
+        id: cache-so3lr
+        with:
+          path: so3lr_models
+          key: so3lr-models-v2-${{ runner.os }}
+          restore-keys: |
+            so3lr-models-v2-
+            so3lr-models-
 
       - name: Download SO3LR model files
+        if: steps.cache-so3lr.outputs.cache-hit != 'true'
         run: |
           mkdir -p so3lr_models
           cd so3lr_models
@@ -58,6 +88,20 @@ jobs:
           git sparse-checkout set so3lr/params
           echo "Downloaded SO3LR models to: $(pwd)/so3lr/params"
           ls -la so3lr/params
+
+      - name: Verify SO3LR cache (if restored)
+        if: steps.cache-so3lr.outputs.cache-hit == 'true'
+        run: |
+          echo "SO3LR models restored from cache"
+          ls -la so3lr_models/so3lr/so3lr/params
+
+      - name: Cache efficiency report
+        run: |
+          echo "## Cache Status Report" >> $GITHUB_STEP_SUMMARY
+          echo "- **Poetry Cache**: ${{ steps.cache-poetry.outputs.cache-hit == 'true' && '✅ HIT' || '❌ MISS' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SO3LR Models Cache**: ${{ steps.cache-so3lr.outputs.cache-hit == 'true' && '✅ HIT' || '❌ MISS' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Virtual Environment Size**: $(du -sh .venv 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
+          echo "- **SO3LR Models Size**: $(du -sh so3lr_models 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
 
       - name: Run tests with coverage
         env:
