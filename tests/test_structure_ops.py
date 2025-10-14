@@ -444,6 +444,101 @@ class TestOptimizeStructure:
         )
         assert constraint_large is None  # No constraints needed
 
+    @pytest.mark.unit
+    def test_optimize_structure_constraint_info_logging(self, water_files, temp_dir):
+        """Test that constraint info is properly logged in optimization results."""
+        from tests.conftest import MockSo3lrSfCalculator
+        from ase.constraints import FixAtoms
+
+        atoms = load_ase_structure(water_files['xyz'])[0]
+        mock_calculator = MockSo3lrSfCalculator()
+
+        # Create a constraint to test the logging
+        constraint = FixAtoms(indices=[0])  # Fix first atom
+        atoms.set_constraint(constraint)
+
+        with patch('src.structure_ops.FIRE') as mock_fire_class:
+            mock_optimizer = Mock()
+            mock_optimizer.run = Mock()
+            mock_optimizer.converged.return_value = True
+            mock_optimizer.nsteps = 5
+            mock_fire_class.return_value = mock_optimizer
+
+            output_path = temp_dir / "constrained_water.xyz"
+            _, opt_info = optimize_structure(
+                atoms,
+                calc=mock_calculator,
+                optimizer='FIRE',
+                output_path=output_path,
+                n_protein_atoms=2,  # Treat first 2 atoms as "protein"
+                opt_radius=1.0      # This triggers the constraint info logging
+            )
+
+            # Check basic constraint info
+            assert opt_info['constraint_info']['constraint_applied'] == True
+            assert opt_info['constraint_info']['constraint_type'] == 'FixAtoms'
+
+            # Check detailed constraint info (the lines we're testing)
+            constraint_info = opt_info['constraint_info']
+            assert 'optimization_radius' in constraint_info
+            assert 'total_protein_atoms' in constraint_info
+            assert 'total_ligand_atoms' in constraint_info
+            assert 'flexible_protein_atoms' in constraint_info
+            assert 'fixed_protein_atoms' in constraint_info
+            assert 'ligand_atoms_always_flexible' in constraint_info
+            assert 'constraint_details' in constraint_info
+
+            # Verify the calculated values
+            assert constraint_info['optimization_radius'] == 1.0
+            assert constraint_info['total_protein_atoms'] == 2
+            assert constraint_info['total_ligand_atoms'] == 1  # 3 atoms - 2 protein = 1 ligand
+            assert constraint_info['fixed_protein_atoms'] == 1  # One atom fixed by constraint
+            assert constraint_info['flexible_protein_atoms'] == 1  # 2 - 1 = 1 flexible
+            assert constraint_info['ligand_atoms_always_flexible'] == 1
+
+            # Check constraint details string format
+            expected_details = "1/2 protein atoms flexible within 1.0Å of ligand"
+            assert constraint_info['constraint_details'] == expected_details
+
+    @pytest.mark.unit
+    def test_optimize_structure_no_constraint_info_when_no_radius(self, water_files, temp_dir):
+        """Test that detailed constraint info is not added when opt_radius is None."""
+        from tests.conftest import MockSo3lrSfCalculator
+        from ase.constraints import FixAtoms
+
+        atoms = load_ase_structure(water_files['xyz'])[0]
+        mock_calculator = MockSo3lrSfCalculator()
+
+        # Create a constraint but don't provide opt_radius
+        constraint = FixAtoms(indices=[0])
+        atoms.set_constraint(constraint)
+
+        with patch('src.structure_ops.FIRE') as mock_fire_class:
+            mock_optimizer = Mock()
+            mock_optimizer.run = Mock()
+            mock_optimizer.converged.return_value = True
+            mock_optimizer.nsteps = 5
+            mock_fire_class.return_value = mock_optimizer
+
+            output_path = temp_dir / "constrained_water.xyz"
+            _, opt_info = optimize_structure(
+                atoms,
+                calc=mock_calculator,
+                optimizer='FIRE',
+                output_path=output_path,
+                n_protein_atoms=2,  # Provide n_protein_atoms but not opt_radius
+                opt_radius=0.1     # This should prevent detailed logging
+            )
+            # Check basic constraint info exists
+            constraint_info = opt_info['constraint_info']
+            assert constraint_info['constraint_applied'] == True
+            assert constraint_info['constraint_type'] == 'FixAtoms'
+
+            # Check that detailed constraint info is added
+            assert constraint_info['optimization_radius'] == 0.1
+            assert constraint_info['total_protein_atoms'] == 2
+            assert 'constraint_details' in constraint_info
+
 
 
 class TestExtractLigands:
@@ -814,7 +909,6 @@ class TestStructureOpsIntegration:
     def test_perform_trimming_real(self, test_data_dir, temp_dir):
         """Test perform_trimming with real data workflow."""
         from src.structure_ops import perform_trimming
-        from src.utils import setup_logging
 
         # Skip if test data not available
         alanine_file = test_data_dir / "alanine.xyz"
@@ -944,6 +1038,7 @@ class TestProcessSingleLigand:
         mock_args = Mock()
         mock_args.optimize = False
         mock_args.explain = False
+        mock_args.protein_explain = False
         mock_args.eda = False
         mock_args.opt_log = False
 
@@ -984,7 +1079,8 @@ class TestProcessSingleLigand:
         mock_args.explain = True
         mock_args.eda = False
         mock_args.opt_log = False
-
+        mock_args.protein_explain = False
+        
         mock_logger = Mock()
         optimization_log = []
 
@@ -1021,7 +1117,8 @@ class TestProcessSingleLigand:
                 explainability=True,
                 eda=False,
                 heatmap_output=expected_heatmap,
-                verbose=False
+                verbose=False,
+                preloaded_protein_prolif=None
             )
 
     @pytest.mark.unit

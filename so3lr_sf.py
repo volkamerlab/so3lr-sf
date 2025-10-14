@@ -27,7 +27,7 @@ from src.interaction_energy import protein_ligand_interaction
 from src.utils import setup_logging
 from src.structure_ops import perform_trimming, optimize_protein, process_single_ligand
 from src.utils import setup_output_directory, save_results, get_ligand_files
-
+from src.molecule_loader import load_molecule_to_prolif
 
 def setup_argument_parser() -> argparse.ArgumentParser:
     """Set up command line argument parser."""
@@ -80,6 +80,11 @@ Examples:
         "--explain",
         action="store_true",
         help="Generate explainability analysis and heatmaps"
+    )
+    parser.add_argument(
+        "--protein-explain",
+        action="store_true",
+        help="Generate enhanced explainability with protein-ligand interaction analysis and residue coloring"
     )
     parser.add_argument(
         "--eda",
@@ -182,18 +187,19 @@ def main():
         logger.info("Starting SO3LR-SF protein-ligand interaction calculation")
         logger.info(f"Protein: {args.protein}")
         logger.info(f"Ligands: {args.ligands}")
-        logger.info(f"Workflow: trim={args.trim}, optimize={args.optimize}, eda={args.eda}, explain={args.explain}")
+        logger.info(f"Workflow: trim={args.trim}, optimize={args.optimize}, eda={args.eda}, explain={args.explain}, protein-explain={args.protein_explain}")
 
         # Setup output directory and subdirectories
+        explain_mode = args.explain or args.protein_explain
         output_dir = setup_output_directory(
-            protein_path, optimize=args.optimize, trim=args.trim, explain=args.explain,
+            protein_path, optimize=args.optimize, trim=args.trim, explain=explain_mode,
             steps=args.steps, fmax=args.fmax, radius=args.radius
         )
         logger.info(f"Output directory: {output_dir}")
 
         # Setup calculator
         calc_kwargs = {}
-        if args.explain or args.eda:
+        if args.explain or args.eda or args.protein_explain:
             calc_kwargs['output_per_atom_energy_components'] = True
 
         logger.info("Initializing SO3LRSF calculator...")
@@ -217,6 +223,10 @@ def main():
                 output_dir, optimization_log, args.opt_log, logger
             )
 
+        # Optional: load ProLIF protein structure for explainability
+        preloaded_protein_prolif = None
+        if args.protein_explain:
+            preloaded_protein_prolif = load_molecule_to_prolif(working_protein_path, is_protein=True)
         # Step 3: Ligand processing
         logger.info("=== LIGAND PROCESSING PHASE ===")
         ligand_files = get_ligand_files(args.ligands, output_dir)
@@ -224,14 +234,15 @@ def main():
 
         results = []
         failed_count = 0
-
+        
         for i, ligand_file in enumerate(tqdm(ligand_files, desc="Processing ligands"), 1):
             ligand_name = Path(ligand_file).stem
             logger.info(f"\n--- Processing ligand {i}/{len(ligand_files)}: {ligand_name} ---")
 
             result, error = process_single_ligand(
                 ligand_file, args, calc, working_protein_path,
-                output_dir, optimization_log, logger
+                output_dir, optimization_log, logger,
+                preloaded_protein_prolif
             )
 
             if error:

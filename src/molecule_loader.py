@@ -5,7 +5,7 @@ This module provides functions for loading molecular structures from various fil
 with proper handling of multi-molecule files.
 """
 
-from typing import Union, List
+from typing import Union, List, Dict, Tuple, Optional
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from ase import Atoms
@@ -117,39 +117,159 @@ def load_ase_structure(file_path: Union[str, Path], index: Union[int, str] = 0) 
     return atoms_list
 
 
-def load_molecule_to_prolif(file_path: Union[str, Path]):
+def create_residue_atom_mapping(universe: mda.Universe) -> Dict[str, List[int]]:
     """
-    Universal function to load any molecule (protein or ligand) to ProLIF (RDKit) format.
+    Create mapping of residue identifiers to their atom indices.
 
-    Supports: PDB, SDF, XYZ formats for both proteins and ligands
+    Args:
+        universe: MDAnalysis Universe object
+
+    Returns:
+        Dict mapping "resname+resid.segid" to list of atom indices
+
+    Example:
+        >>> u = mda.Universe("protein.pdb")
+        >>> mapping = create_residue_atom_mapping(u)
+        >>> # mapping["ALA1.A"] = [0, 1, 2, 3, 4]
+    """
+    return {
+        f"{residue.resname}{residue.resid}.{residue.segid}": [int(atom.index) for atom in residue.atoms]
+        for residue in universe.residues
+    }
+
+
+def filter_interacting_residues(
+    atom_map: List[Dict],
+    residue_atom_mapping: Dict[str, List[int]]
+) -> Dict[str, List[int]]:
+    """
+    Filter residue mapping to only include residues with interactions.
+
+    Args:
+        atom_map: List of interaction info dictionaries containing 'protein_residue' keys
+        residue_atom_mapping: Full residue to atom index mapping
+
+    Returns:
+        Filtered mapping containing only residues that have interactions
+
+    Example:
+        >>> atom_map = [{"protein_residue": "ALA1.A"}, {"protein_residue": "VAL5.A"}]
+        >>> filtered = filter_interacting_residues(atom_map, full_mapping)
+    """
+    # Use set comprehension for efficiency
+    interacting_residues = {interaction_info['protein_residue'] for interaction_info in atom_map}
+
+    # Return only residues that exist in both sets
+    return {
+        residue: residue_atom_mapping[residue]
+        for residue in interacting_residues
+        if residue in residue_atom_mapping
+    }
+
+
+def _prepare_mda_universe(file_path: Path) -> mda.Universe:
+    """
+    Helper function to create and prepare MDAnalysis Universe with elements.
 
     Args:
         file_path: Path to structure file
 
     Returns:
-        rdkit.Chem.Mol: RDKit molecule object optimized for ProLIF
+        Prepared MDAnalysis Universe with elements topology attribute
 
     Raises:
-        ValueError: If file format is not supported or molecule cannot be loaded
+        ValueError: If Universe cannot be created
+    """
+    try:
+        universe = mda.Universe(str(file_path))
+        elements = mda.topology.guessers.guess_types(universe.atoms.names)
+        universe.add_TopologyAttr("elements", elements)
+        return universe
+    except Exception as e:
+        raise ValueError(f"Could not create MDAnalysis Universe from {file_path}: {e}")
+
+
+def load_molecule_to_prolif(
+    file_path: Union[str, Path],
+    is_protein: bool = False,
+) -> Union[plf.Molecule, Tuple[plf.Molecule, Dict[str, List[int]]]]:
+    """
+    Universal function to load molecules to ProLIF format with optional residue mapping.
+
+    Supports PDB, SDF, XYZ formats for both proteins and ligands.
+    For proteins, requires PDB format to extract residue information.
+
+    Args:
+        file_path: Path to structure file
+        is_protein: If True, returns residue mapping (requires PDB format)
+
+    Returns:
+        If is_protein=False: prolif.Molecule object
+        If is_protein=True: Tuple of (prolif.Molecule, residue_atom_mapping dict)
+
+    Raises:
+        ValueError: If file format is not supported, molecule cannot be loaded,
+                   or protein flag is True but file is not PDB format
+
+    Example:
+        >>> # Load ligand
+        >>> ligand = load_molecule_to_prolif("ligand.sdf")
+        >>>
+        >>> # Load protein with residue mapping
+        >>> protein, mapping = load_molecule_to_prolif("protein.pdb", is_protein=True)
     """
     file_path = Path(file_path)
+
+    if not file_path.exists():
+        raise ValueError(f"File does not exist: {file_path}")
+
     suffix = file_path.suffix.lower()
+    supported_formats = {'.pdb', '.sdf', '.xyz'}
 
-    if suffix not in ['.pdb', '.sdf', '.xyz']:
-        raise ValueError(f"Unsupported file format: {suffix}. Supported formats: .pdb, .sdf, .xyz")
+    if suffix not in supported_formats:
+        raise ValueError(
+            f"Unsupported file format: {suffix}. "
+            f"Supported formats: {', '.join(sorted(supported_formats))}"
+        )
 
-    # Load RDKit molecule based on format
-    if suffix == '.pdb':
-        mol = Chem.MolFromPDBFile(str(file_path), removeHs=False)
-    elif suffix == '.sdf':
-        mol = Chem.MolFromMolFile(str(file_path))
-    elif suffix == '.xyz':
-        u = mda.Universe(str(file_path))
-        # add "elements" category
-        elements = mda.topology.guessers.guess_types(u.atoms.names)
-        u.add_TopologyAttr("elements", elements)
-        mol = plf.Molecule.from_mda(u)
-    if mol is None:
-        raise ValueError(f"Could not load molecule from {file_path}")
+    # Handle protein case (requires PDB for residue information)
+    if is_protein:
+        if suffix != '.pdb':
+            raise ValueError(
+                f"Protein files must be in PDB format to extract residue information. "
+                f"Got: {suffix}. Use is_protein=False for non-PDB protein files."
+            )
 
-    return mol
+        universe = _prepare_mda_universe(file_path)
+        residue_mapping = create_residue_atom_mapping(universe)
+
+        try:
+            molecule = plf.Molecule.from_mda(universe)
+            return molecule, residue_mapping
+        except Exception as e:
+            raise ValueError(f"Could not create ProLIF molecule from {file_path}: {e}")
+
+    # Handle ligand/non-protein cases
+    try:
+        if suffix == '.pdb':
+            # Try RDKit PDB parser first (better for small molecules)
+            mol = Chem.MolFromPDBFile(str(file_path), removeHs=False)
+            if mol is None:
+                # Fallback to MDAnalysis for complex PDB files
+                universe = _prepare_mda_universe(file_path)
+                return plf.Molecule.from_mda(universe)
+            return plf.Molecule(mol)
+
+        elif suffix == '.sdf':
+            mol = Chem.MolFromMolFile(str(file_path))
+            if mol is None:
+                raise ValueError(f"RDKit could not parse SDF file: {file_path}")
+            return plf.Molecule(mol)
+
+        elif suffix == '.xyz':
+            # XYZ files need MDAnalysis for proper handling
+            universe = _prepare_mda_universe(file_path)
+            return plf.Molecule.from_mda(universe)
+
+    except Exception as e:
+        raise ValueError(f"Could not load molecule from {file_path}: {e}")

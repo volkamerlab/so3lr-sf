@@ -47,8 +47,13 @@ from .utils import (
 )
 
 from .explainability import (
-    compute_ligand_energy_differences,
-    generate_interaction_heatmap
+    generate_energy_heatmap,
+    generate_ligand_heatmap,
+    generate_protein_interaction_heatmap
+)
+
+from .explain_utils import (
+    compute_energy_differences
 )
 
 # Package metadata
@@ -79,6 +84,8 @@ __all__ = [
     'validate_structure',
 
     # Explainability
-    'compute_ligand_energy_differences',
-    'generate_interaction_heatmap'
+    'compute_energy_differences',
+    'generate_energy_heatmap',
+    'generate_ligand_heatmap',
+    'generate_protein_interaction_heatmap'
 ]

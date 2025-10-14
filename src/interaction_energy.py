@@ -9,13 +9,14 @@ import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import Union, Optional, Dict, Any, Tuple
+from typing import List, Union, Optional, Dict, Any, Tuple
 from ase import Atoms
+import prolif as plf
 
 from .calculator import So3lrSfCalculator
 from .molecule_loader import load_ase_structure
-from .explainability import compute_ligand_energy_differences, generate_interaction_heatmap
-
+from .explainability import generate_energy_heatmap
+from .explain_utils import compute_energy_differences
 
 def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, Path],
                       complex_path: Optional[Union[str, Path]] = None, logger=None) -> Tuple[Atoms, Atoms, Atoms]:
@@ -221,7 +222,8 @@ def compute_eda_analysis(protein_components: Dict, ligand_components: Dict, comp
 
 def analyze_explainability(protein_components: Dict, ligand_components: Dict, complex_components: Dict,
                          protein_atoms: Atoms, ligand_atoms: Atoms, ligand_path: Union[str, Path],
-                         heatmap_output: Optional[Union[str, Path]] = None, logger=None) -> Dict[str, Any]:
+                         heatmap_output: Optional[Union[str, Path]] = None, logger=None,
+                         preloaded_protein_prolif: Optional[Tuple[plf.molecule.Molecule, Dict[str, List[int]]]] = None) -> Dict[str, Any]:
     """
     Perform explainability analysis and generate heatmap.
 
@@ -234,6 +236,7 @@ def analyze_explainability(protein_components: Dict, ligand_components: Dict, co
         ligand_path: Path to ligand file
         heatmap_output: Path to save heatmap
         logger: Logger instance
+        protein_ligand_mode: If True, generate enhanced heatmap with protein residue interactions
 
     Returns:
         Analysis dictionary with energy differences and heatmap path
@@ -250,21 +253,28 @@ def analyze_explainability(protein_components: Dict, ligand_components: Dict, co
 
     # Compute ligand energy differences
     logger.debug("Computing per-atom energy differences for ligand atoms...")
-    ligand_energy_differences = compute_ligand_energy_differences(
-        protein_components, ligand_components, complex_components,
-        n_protein_atoms, n_ligand_atoms
-    )
+    if preloaded_protein_prolif is not None:
+        
+        ligand_energy_differences, protein_energy_differences = compute_energy_differences(
+            protein_components, ligand_components, complex_components,
+            n_protein_atoms, n_ligand_atoms, protein_mode=True
+        )
+    else:
+        ligand_energy_differences, protein_energy_differences = compute_energy_differences(
+            protein_components, ligand_components, complex_components,
+            n_protein_atoms, n_ligand_atoms
+        )
 
     # Generate heatmap if requested
     heatmap_path = None
-    if heatmap_output and ligand_energy_differences:
+    if heatmap_output:
         logger.info(f"Generating heatmap: {heatmap_output}")
         try:
             ligand_name = Path(ligand_path).stem
             title = f"Protein-Ligand Interaction: {ligand_name}"
 
-            fig = generate_interaction_heatmap(
-                ligand_path, ligand_energy_differences, heatmap_output, title
+            fig = generate_energy_heatmap(
+                ligand_path, ligand_energy_differences, heatmap_output, title, protein_energy_differences, preloaded_protein_prolif
             )
             heatmap_path = str(heatmap_output)
             logger.info(f"Heatmap saved successfully: {heatmap_path}")
@@ -296,7 +306,8 @@ def protein_ligand_interaction(
     explainability: bool = False,
     eda: bool = False,
     heatmap_output: Optional[Union[str, Path]] = None,
-    verbose: bool = False
+    verbose: bool = False,
+    preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None
 ) -> Union[float, Tuple[float, Dict[str, Any]]]:
     """
     Calculate protein-ligand interaction energy with optional explainability.
@@ -313,6 +324,7 @@ def protein_ligand_interaction(
         eda: If True, save individual energy component totals separately
         heatmap_output: Path to save heatmap image (only used if explainability=True)
         verbose: Enable verbose logging
+        preloaded_protein_prolif: Optional preloaded protein ProLIF data for enhanced explainability
 
     Returns:
         float or tuple:
@@ -375,10 +387,11 @@ def protein_ligand_interaction(
     analysis = {}
 
     if explainability:
-        # Explainability analysis
+        # Explainability analysis (enhanced if preloaded ProLIF data is provided)
         explainability_analysis = analyze_explainability(
             protein_components, ligand_components, complex_components,
-            protein_atoms, ligand_atoms, ligand_path, heatmap_output, logger
+            protein_atoms, ligand_atoms, ligand_path, heatmap_output, logger,
+            preloaded_protein_prolif=preloaded_protein_prolif
         )
         analysis.update(explainability_analysis)
 

@@ -286,7 +286,7 @@ def optimize_structure(
         'constraint_applied': constraint is not None,
         'constraint_type': type(constraint).__name__ if constraint is not None else None
     }
-
+ 
     # Add detailed constraint information if constraint was applied
     if constraint is not None and opt_radius is not None:
         # Extract constraint details
@@ -436,7 +436,7 @@ def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_
     return optimized_path
 
 
-def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger):
+def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger, preloaded_protein_prolif=None):
     """Process a single ligand through the workflow."""
 
     ligand_path = Path(ligand_file)
@@ -506,20 +506,24 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
         logger.info(f"Calculating interaction energy for: {ligand_name}")
 
         heatmap_output = None
-        if args.explain:
+        if args.explain or args.protein_explain:
             heatmap_output = output_dir / "ligand_exp" / f"{ligand_name}_heatmap.png"
+
+        # Determine explainability mode
+        explainability_mode = args.explain or args.protein_explain
 
         result_from_calc = protein_ligand_interaction(
             working_protein_path, working_ligand_path, calc,
             complex_path=working_complex_path,
-            explainability=args.explain,
+            explainability=explainability_mode,
             eda=args.eda,
             heatmap_output=heatmap_output,
-            verbose=False
+            verbose=False,
+            preloaded_protein_prolif=preloaded_protein_prolif  # Enhanced mode if not None
         )
 
         # Handle results
-        if args.explain or args.eda:
+        if explainability_mode or args.eda:
             interaction_energy, analysis = result_from_calc
         else:
             interaction_energy = result_from_calc
