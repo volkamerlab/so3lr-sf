@@ -1,8 +1,8 @@
 # **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![codecov](https://codecov.io/gh/hamzaibrahim21/so3lr-sf/branch/main/graph/badge.svg)](https://codecov.io/gh/hamzaibrahim21/so3lr-sf)
-[![CI](https://github.com/hamzaibrahim21/so3lr-sf/workflows/CI/badge.svg)](https://github.com/hamzaibrahim21/so3lr-sf/actions)
+[![codecov](https://codecov.io/gh/volkamerlab/so3lr-sf/branch/main/graph/badge.svg)](https://codecov.io/gh/volkamerlab/so3lr-sf)
+[![CI](https://github.com/volkamerlab/so3lr-sf/workflows/CI/badge.svg)](https://github.com/volkamerlab/so3lr-sf/actions)
 
 SO3LR-SF is a comprehensive Python package for calculating protein-ligand interaction energies using SO3LR machine learning force fields. It provides advanced features including structure optimization, explainability analysis, and molecular visualization.
 
