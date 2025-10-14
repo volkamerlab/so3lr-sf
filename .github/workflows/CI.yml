@@ -153,9 +153,13 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
           flags: unittests
-          name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}
-          fail_ci_if_error: false
+          name: codecov-ubuntu-latest-py3.12
+          fail_ci_if_error: true
           verbose: true
+          override_branch: main
+          override_commit: ${{ github.sha }}
+          override_pr: ${{ github.event.number }}
+          override_build: ${{ github.run_number }}
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
