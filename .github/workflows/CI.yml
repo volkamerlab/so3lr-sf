@@ -107,7 +107,25 @@ jobs:
         env:
           SO3LR_MODEL_PATH: ${{ github.workspace }}/so3lr_models/so3lr/so3lr/params
         run: |
-          poetry run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json -v
+          poetry run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json --cov-fail-under=90 -v
+
+      - name: Check coverage threshold
+        run: |
+          echo "## Coverage Threshold Check" >> $GITHUB_STEP_SUMMARY
+          COVERAGE=$(poetry run coverage report --format=total)
+          echo "- **Current Coverage**: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+          echo "- **Required Threshold**: 90%" >> $GITHUB_STEP_SUMMARY
+          # Convert to integer for comparison (multiply by 100 to handle decimals)
+          COVERAGE_INT=$(echo "$COVERAGE * 100" | python3 -c "import sys; print(int(float(sys.stdin.read().strip().split()[0])))")
+          THRESHOLD_INT=9000  # 90.00%
+          if [ "$COVERAGE_INT" -lt "$THRESHOLD_INT" ]; then
+            echo "❌ **FAILURE**: Coverage ${COVERAGE}% is below the required 90% threshold!" >> $GITHUB_STEP_SUMMARY
+            echo "ERROR: Code coverage ${COVERAGE}% is below the required 90% threshold!"
+            exit 1
+          else
+            echo "✅ **SUCCESS**: Coverage ${COVERAGE}% meets the 90% threshold requirement!" >> $GITHUB_STEP_SUMMARY
+            echo "SUCCESS: Code coverage ${COVERAGE}% meets the 90% threshold requirement!"
+          fi
 
       - name: Generate coverage badge
         run: |
@@ -117,7 +135,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./coverage.xml
+          files: ./coverage.xml
           flags: unittests
           name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}
           fail_ci_if_error: false
