@@ -12,8 +12,8 @@ from PIL import Image
 import prolif as plf
 from typing import Dict, Any, Optional, Tuple, List
 from matplotlib.colors import Normalize
-from rdkit.Chem import Draw, rdDepictor
-from rdkit.Chem.Draw import SimilarityMaps, rdMolDraw2D
+from rdkit.Chem import Draw
+from rdkit.Chem.Draw import SimilarityMaps
 
 
 ########################## GENERAL VISUALIZATION UTILITIES #########################
@@ -82,71 +82,6 @@ def similarity_map_gen(mol, weights, cmap="bwr", width=600, height=600, **kwargs
 
 ######################### FUNCTIONS FOR PROTEIN-LIGAND EXPLAINABILITY #########################
 
-def similarity_map_with_colored_bonds(
-    mol, weights, highlight_bonds, highlight_bond_colors,
-    cmap="bwr", width=600, height=600, **kwargs
-):
-    """
-    Generate a similarity map with custom bond coloring using rdMolDraw2D for protein-ligand interactions.
-
-    Args:
-        mol: RDKit molecule object
-        weights: List of weights for each atom
-        highlight_bonds: List of bond indices to highlight
-        highlight_bond_colors: Dict mapping bond indices to RGB colors
-        cmap: Colormap name
-        width: Image width
-        height: Image height
-        **kwargs: Additional similarity map parameters
-
-    Returns:
-        np.ndarray: Generated similarity map image with colored bonds
-    """
-    if len(weights) != mol.GetNumAtoms():
-        raise ValueError(
-            f"Weights length {len(weights)} does not match number of atoms "
-            f"in molecule {mol.GetNumAtoms()}"
-        )
-
-    # Create drawer with proper settings for normal atom sizes
-    d2d = rdMolDraw2D.MolDraw2DCairo(width, height)
-    opts = d2d.drawOptions()
-
-    # Configure drawing options for proper atom sizing
-    opts.circleAtoms = True
-    opts.fillHighlights = True
-    opts.continuousHighlight = False
-    opts.highlightRadius = 0.5  # Larger radius for normal atom size
-    opts.bondLineWidth = 3
-    opts.minFontSize = 12
-    opts.maxFontSize = 18
-
-    # Create atom colors based on weights for heatmap effect
-    atom_colors = {}
-    colormap = plt.get_cmap(cmap)
-    scale = kwargs.get('scale', 1.0)
-
-    for i, weight in enumerate(weights):
-        if np.isnan(weight):
-            continue  # Skip nan weights
-        normalized_weight = max(-1.0, min(1.0, weight / scale))  # Normalize to [-1, 1]
-        color_val = (normalized_weight + 1.0) / 2.0  # Convert to [0, 1]
-        rgb = colormap(color_val)[:3]  # Get RGB, ignore alpha
-        atom_colors[i] = rgb
-
-    # Draw molecule with both atom colors (for heatmap) and bond colors (for interactions)
-    d2d.DrawMolecule(
-        mol,
-        highlightAtoms=list(atom_colors.keys()),
-        highlightBonds=highlight_bonds,
-        highlightBondColors=highlight_bond_colors,
-        highlightAtomColors=atom_colors,
-    )
-
-    d2d.FinishDrawing()
-    img_bytes = d2d.GetDrawingText()
-    img_pil = Image.open(io.BytesIO(img_bytes))
-    return np.asarray(img_pil)
 
 
 def categorize_interaction(interaction_type: str) -> str:
@@ -262,33 +197,37 @@ def add_interaction_summary(fig: plt.Figure, atom_mappings: List[Dict[str, Any]]
 
     # Build all text parts and calculate total width more accurately
     text_parts = []
-    total_width = 0
+    element_widths = []
 
     for category, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
         text = f'{category} ({count})'
         text_parts.append((category, count, text))
-        # More accurate width calculation: marker + space + text + spacing
-        total_width += 0.03 + len(text) * 0.009 + 0.04  # marker + text + spacing
+        # Consistent width calculation: marker (0.02) + space (0.01) + text + inter-element spacing (0.03)
+        element_width = 0.02 + 0.01 + len(text) * 0.008 + 0.03
+        element_widths.append(element_width)
 
-    # Start position to center the entire content beneath the title
+    # Total width of all elements (minus the last spacing)
+    total_width = sum(element_widths) - 0.03 if element_widths else 0
+
+    # Start position to center the entire legend
     x_start = 0.5 - (total_width / 2)
-    y_pos = 0.85  # More centered between title and heatmaps
-    x_offset = 0.0
+    y_pos = 0.87  # Slightly higher position
+    x_current = x_start
 
-    for category, count, text in text_parts:
+    for i, (category, count, text) in enumerate(text_parts):
         color = color_map.get(category, (0.5, 0.5, 0.5))
 
         # Add colored circle marker
-        fig.text(x_start + x_offset, y_pos, '●', transform=fig.transFigure,
+        fig.text(x_current, y_pos, '●', transform=fig.transFigure,
                 fontsize=16, color=color, verticalalignment='center')
 
         # Add category text
-        fig.text(x_start + x_offset + 0.02, y_pos, text,
+        fig.text(x_current + 0.03, y_pos, text,
                 transform=fig.transFigure, fontsize=12, verticalalignment='center')
 
-        # Move to next position
-        text_width = 0.02 + len(text) * 0.007 + 0.03
-        x_offset += text_width
+        # Move to next position using the calculated width
+        if i < len(text_parts) - 1:  # Don't add spacing after the last element
+            x_current += element_widths[i]
 
 
 ############################# UTILITIES FOR PROTEIN-LIGAND EXPLAINABILITY #########################
@@ -345,17 +284,18 @@ def get_atom_mappings(fp: plf.Fingerprint) -> List[Dict[str, Any]]:
                         'interaction_type': interaction_type,
                     }
 
-                    # Extract indices
-                    if 'indices' in metadata:
+                    # Extract indices (check if metadata is not None and is a dict)
+                    if metadata and isinstance(metadata, dict) and 'indices' in metadata:
                         indices = metadata['indices']
                         mapping['ligand_atoms'] = list(indices.get('ligand', ()))
                         mapping['protein_atoms'] = list(indices.get('protein', ()))
 
                     # Extract additional info with rounding
-                    if 'distance' in metadata:
-                        mapping['distance'] = round(metadata['distance'], 3)
-                    if 'DHA_angle' in metadata:
-                        mapping['DHA_angle'] = round(metadata['DHA_angle'], 3)
+                    if metadata and isinstance(metadata, dict):
+                        if 'distance' in metadata:
+                            mapping['distance'] = round(metadata['distance'], 3)
+                        if 'DHA_angle' in metadata:
+                            mapping['DHA_angle'] = round(metadata['DHA_angle'], 3)
 
                     mappings.append(mapping)
 

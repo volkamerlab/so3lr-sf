@@ -5,9 +5,8 @@ This module provides functions for loading molecular structures from various fil
 with proper handling of multi-molecule files.
 """
 
-from typing import Union, List, Dict, Tuple, Optional
+from typing import Union, List, Dict, Tuple
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from ase import Atoms
 from ase.io import read
 from rdkit import Chem
@@ -138,33 +137,6 @@ def create_residue_atom_mapping(universe: mda.Universe) -> Dict[str, List[int]]:
     }
 
 
-def filter_interacting_residues(
-    atom_map: List[Dict],
-    residue_atom_mapping: Dict[str, List[int]]
-) -> Dict[str, List[int]]:
-    """
-    Filter residue mapping to only include residues with interactions.
-
-    Args:
-        atom_map: List of interaction info dictionaries containing 'protein_residue' keys
-        residue_atom_mapping: Full residue to atom index mapping
-
-    Returns:
-        Filtered mapping containing only residues that have interactions
-
-    Example:
-        >>> atom_map = [{"protein_residue": "ALA1.A"}, {"protein_residue": "VAL5.A"}]
-        >>> filtered = filter_interacting_residues(atom_map, full_mapping)
-    """
-    # Use set comprehension for efficiency
-    interacting_residues = {interaction_info['protein_residue'] for interaction_info in atom_map}
-
-    # Return only residues that exist in both sets
-    return {
-        residue: residue_atom_mapping[residue]
-        for residue in interacting_residues
-        if residue in residue_atom_mapping
-    }
 
 
 def _prepare_mda_universe(file_path: Path) -> mda.Universe:

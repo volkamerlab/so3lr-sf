@@ -162,7 +162,27 @@ def generate_protein_interaction_heatmap(
         print(f"{component}: max absolute contribution = {global_max:.6f} eV")
 
         # Create molecule with residue pseudo-atoms for this component
+        # First compute 2D coordinates for the original ligand
+        rdDepictor.Compute2DCoords(rdkit_mol, bondLength=3.0)
         lig_with_interactions = Chem.RWMol(rdkit_mol)
+
+        # Group interactions by residue with detailed interaction info
+        # Filter to only include protein-ligand interactions (exclude protein-protein)
+        residue_interactions = {}
+        for mapping in atom_mappings:
+            residue = mapping.get('protein_residue', 'Unknown')
+            interaction_type = mapping.get('interaction_type', 'Unknown')
+            ligand_atoms = mapping.get('ligand_atoms', [])
+
+
+            if residue not in residue_interactions:
+                residue_interactions[residue] = []
+
+            # Add interaction details for this residue
+            residue_interactions[residue].append({
+                'ligand_atoms': ligand_atoms,
+                'interaction_type': interaction_type
+            })
 
         # Build visualization elements
         highlight_bonds = []
@@ -170,13 +190,9 @@ def generate_protein_interaction_heatmap(
         seen_bonds = set()
         extended_weights = list(weights)  # Start with original ligand weights
 
-        # Process each interaction mapping to add pseudo-atoms and bonds
-        for mapping in atom_mappings:
-            residue = mapping.get('protein_residue', 'Unknown')
-            interaction_type = mapping.get('interaction_type', 'Unknown')
-            ligand_atoms = mapping.get('ligand_atoms', [])
-
-            # Create residue pseudo-atom with proper label
+        # Process unique residues and create one pseudoatom per residue
+        for residue, interactions_list in residue_interactions.items():
+            # Create residue pseudo-atom with proper label (only once per residue)
             res_atom = Chem.Atom(0)  # Dummy atom
             res_atom.SetProp('atomLabel', residue)
             res_idx = lig_with_interactions.AddAtom(res_atom)
@@ -190,24 +206,27 @@ def generate_protein_interaction_heatmap(
                 # Default weight of 0 for residues without energy data
                 extended_weights.append(0.0)
 
-            # Get bond color based on interaction type
-            bond_color = get_interaction_color(interaction_type)
+            # Process each interaction for this residue
+            for interaction in interactions_list:
+                ligand_atoms = interaction['ligand_atoms']
+                interaction_type = interaction['interaction_type']
+                bond_color = get_interaction_color(interaction_type)
 
-            # Add colored bonds from residue pseudo-atom to ligand atoms
-            for ligand_atom_idx in ligand_atoms:
-                if ligand_atom_idx < rdkit_mol.GetNumAtoms():  # Use original molecule atom count
-                    lig_with_interactions.AddBond(res_idx, ligand_atom_idx, Chem.BondType.ZERO)
-                    bond = lig_with_interactions.GetBondBetweenAtoms(res_idx, ligand_atom_idx)
+                # Add colored bonds from residue pseudo-atom to ligand atoms for this specific interaction
+                for ligand_atom_idx in ligand_atoms:
+                    if ligand_atom_idx < rdkit_mol.GetNumAtoms():  # Use original molecule atom count
+                        # Check if bond already exists to avoid duplicates
+                        existing_bond = lig_with_interactions.GetBondBetweenAtoms(res_idx, ligand_atom_idx)
+                        if not existing_bond:
+                            lig_with_interactions.AddBond(res_idx, ligand_atom_idx, Chem.BondType.ZERO)
+                            bond = lig_with_interactions.GetBondBetweenAtoms(res_idx, ligand_atom_idx)
 
-                    if bond is not None:
-                        bond_idx = bond.GetIdx()
-                        if bond_idx not in seen_bonds:
-                            seen_bonds.add(bond_idx)
-                            highlight_bonds.append(bond_idx)
-                            highlight_bond_colors[bond_idx] = bond_color
-
-        # Generate 2D coordinates for clean 2D visualization
-        rdDepictor.Compute2DCoords(lig_with_interactions, bondLength=3.0)
+                            if bond is not None:
+                                bond_idx = bond.GetIdx()
+                                if bond_idx not in seen_bonds:
+                                    seen_bonds.add(bond_idx)
+                                    highlight_bonds.append(bond_idx)
+                                    highlight_bond_colors[bond_idx] = bond_color
 
         # Create unified heatmap with both ligand atoms and residue pseudo-atoms
         similarity_kwargs = dict(
@@ -246,12 +265,9 @@ def generate_protein_interaction_heatmap(
             normalized_weight = max(-1.0, min(1.0, weight / scale))
             color_val = (normalized_weight + 1.0) / 2.0
             rgb = colormap(color_val)[:3]
-
-            # Debug pseudo-atoms (indices beyond original ligand)
-            if i >= rdkit_mol.GetNumAtoms():
-                print(f"Pseudo-atom {i}: weight={weight:.6f}, normalized={normalized_weight:.6f}, color_val={color_val:.3f}, rgb={rgb}")
-
             atom_colors[i] = rgb
+        # Compute 2D coordinates after adding pseudoatoms, with larger bond length to spread them out
+        rdDepictor.Compute2DCoords(lig_with_interactions, bondLength=4.0, forceRDKit=True)
 
         # Draw molecule with both atom colors (heatmap) and bond colors (interactions)
         d2d.DrawMolecule(

@@ -64,9 +64,7 @@ __version__ = "1.0.0"
 # Main interface functions
 __all__ = [
     # Main functions
-    'energy_calc_fn',
     'protein_ligand_interaction',
-    'batch_ligand_screening',
     'setup_logging',
 
     # Core classes
@@ -78,7 +76,6 @@ __all__ = [
     'extract_ligands',
 
     # Utilities
-    'read_structure',
     'write_structure',
     'get_supported_formats',
     'validate_structure',

@@ -223,7 +223,7 @@ def compute_eda_analysis(protein_components: Dict, ligand_components: Dict, comp
 def analyze_explainability(protein_components: Dict, ligand_components: Dict, complex_components: Dict,
                          protein_atoms: Atoms, ligand_atoms: Atoms, ligand_path: Union[str, Path],
                          heatmap_output: Optional[Union[str, Path]] = None, logger=None,
-                         preloaded_protein_prolif: Optional[Tuple[plf.molecule.Molecule, Dict[str, List[int]]]] = None) -> Dict[str, Any]:
+                         preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None) -> Dict[str, Any]:
     """
     Perform explainability analysis and generate heatmap.
 
@@ -236,7 +236,7 @@ def analyze_explainability(protein_components: Dict, ligand_components: Dict, co
         ligand_path: Path to ligand file
         heatmap_output: Path to save heatmap
         logger: Logger instance
-        protein_ligand_mode: If True, generate enhanced heatmap with protein residue interactions
+        preloaded_protein_prolif: Optional preloaded protein ProLIF data for enhanced explainability
 
     Returns:
         Analysis dictionary with energy differences and heatmap path
