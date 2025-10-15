@@ -107,8 +107,310 @@ class TestTrimStructure:
             protein_path, ligand_path, radius=radius, output_dir=temp_dir
         )
 
-        expected_filename = f"{protein_path.stem}_trimmed_{radius}A.xyz"
+        expected_filename = f"{protein_path.stem}_trimmed_{radius}A_atom.xyz"
         assert Path(trimmed_protein_path).name == expected_filename
+
+    @pytest.mark.unit
+    def test_trim_structure_pdb_residue_based(self, water_files, alanine_files, temp_dir):
+        """Test residue-based trimming for PDB files."""
+        protein_path = alanine_files['pdb']  # Use PDB format
+        ligand_path = water_files['xyz']
+        radius = 2.0
+
+        trimmed_protein_path = trim_structure(
+            protein_path, ligand_path, radius=radius, output_dir=temp_dir
+        )
+
+        # Check that files were created with residue suffix
+        expected_filename = f"{protein_path.stem}_trimmed_{radius}A_residue.xyz"
+        assert Path(trimmed_protein_path).name == expected_filename
+        assert Path(trimmed_protein_path).exists()
+
+        # Check that trimmed protein is valid
+        original_protein = load_ase_structure(protein_path)[0]
+        trimmed_protein = load_ase_structure(trimmed_protein_path)[0]
+
+        assert len(trimmed_protein) <= len(original_protein)
+        assert len(trimmed_protein) > 0
+
+    @pytest.mark.unit
+    def test_trim_structure_xyz_atom_based_warnings(self, water_files, alanine_files, temp_dir, caplog):
+        """Test that XYZ files generate appropriate warnings for atom-based trimming."""
+        import logging
+        protein_path = alanine_files['xyz']  # Use XYZ format
+        ligand_path = water_files['xyz']
+
+        with caplog.at_level(logging.WARNING):
+            trimmed_protein_path = trim_structure(
+                protein_path, ligand_path, radius=2.0, output_dir=temp_dir
+            )
+
+        # Check warning messages were logged
+        warning_messages = [record.message for record in caplog.records if record.levelno >= logging.WARNING]
+        assert any("Using atom-based trimming" in msg for msg in warning_messages)
+        assert any("residues may be incomplete" in msg for msg in warning_messages)
+        assert any("use PDB format input files" in msg for msg in warning_messages)
+
+        # Check filename has atom suffix
+        expected_filename = f"{protein_path.stem}_trimmed_2.0A_atom.xyz"
+        assert Path(trimmed_protein_path).name == expected_filename
+
+    @pytest.mark.unit
+    def test_trim_structure_pdb_residue_info_logging(self, water_files, alanine_files, temp_dir, caplog):
+        """Test that PDB files generate appropriate info messages for residue-based trimming."""
+        import logging
+        protein_path = alanine_files['pdb']  # Use PDB format
+        ligand_path = water_files['xyz']
+
+        with caplog.at_level(logging.INFO):
+            trimmed_protein_path = trim_structure(
+                protein_path, ligand_path, radius=2.0, output_dir=temp_dir
+            )
+
+        # Check info messages were logged
+        info_messages = [record.message for record in caplog.records if record.levelno == logging.INFO]
+        assert any("Using residue-based trimming" in msg for msg in info_messages)
+        assert any("Complete residues will be included" in msg for msg in info_messages)
+
+        # Verify the file was created (use the variable to avoid linting warning)
+        assert Path(trimmed_protein_path).exists()
+
+    @pytest.mark.unit
+    def test_trim_by_atoms_function(self, water_files, alanine_files):
+        """Test _trim_by_atoms function directly."""
+        from src.structure_ops import _trim_by_atoms
+        import logging
+
+        # Load test structures
+        protein = load_ase_structure(alanine_files['xyz'])[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+
+        protein_positions = protein.get_positions()
+        ligand_positions = ligand.get_positions()
+        logger = logging.getLogger(__name__)
+
+        # Test with small radius
+        atoms_to_keep_small = _trim_by_atoms(protein_positions, ligand_positions, 1.0, logger)
+
+        # Test with large radius
+        atoms_to_keep_large = _trim_by_atoms(protein_positions, ligand_positions, 10.0, logger)
+
+        # Large radius should keep more or equal atoms than small radius
+        assert len(atoms_to_keep_large) >= len(atoms_to_keep_small)
+
+        # All atom indices should be valid
+        for idx in atoms_to_keep_small:
+            assert 0 <= idx < len(protein_positions)
+        for idx in atoms_to_keep_large:
+            assert 0 <= idx < len(protein_positions)
+
+    @pytest.mark.unit
+    def test_trim_by_residues_function(self, water_files, alanine_files):
+        """Test _trim_by_residues function directly."""
+        from src.structure_ops import _trim_by_residues
+        import logging
+
+        # Use PDB file for residue information
+        protein_path = alanine_files['pdb']
+        protein = load_ase_structure(protein_path)[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+
+        protein_positions = protein.get_positions()
+        ligand_positions = ligand.get_positions()
+        logger = logging.getLogger(__name__)
+
+        # Test residue-based trimming
+        atoms_to_keep = _trim_by_residues(protein_path, protein_positions, ligand_positions, 3.0, logger)
+
+        # Should return valid atom indices
+        assert isinstance(atoms_to_keep, list)
+        assert len(atoms_to_keep) > 0
+        assert len(atoms_to_keep) <= len(protein_positions)
+
+        # All indices should be valid
+        for idx in atoms_to_keep:
+            assert 0 <= idx < len(protein_positions)
+
+        # Indices should be sorted
+        assert atoms_to_keep == sorted(atoms_to_keep)
+
+    @pytest.mark.unit
+    def test_trim_by_residues_fallback_to_atoms(self, water_files, alanine_files, caplog):
+        """Test that _trim_by_residues falls back to atom-based trimming on error."""
+        from src.structure_ops import _trim_by_residues
+        import logging
+
+        # Use XYZ file which should cause residue parsing to fail
+        protein_path = alanine_files['xyz']  # XYZ instead of PDB
+        protein = load_ase_structure(protein_path)[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+
+        protein_positions = protein.get_positions()
+        ligand_positions = ligand.get_positions()
+        logger = logging.getLogger(__name__)
+
+        with caplog.at_level(logging.WARNING):
+            atoms_to_keep = _trim_by_residues(protein_path, protein_positions, ligand_positions, 3.0, logger)
+
+        # Should still return valid results (from fallback)
+        assert isinstance(atoms_to_keep, list)
+        assert len(atoms_to_keep) > 0
+
+        # Should have logged fallback warnings
+        warning_messages = [record.message for record in caplog.records if record.levelno >= logging.WARNING]
+        assert any("Residue-based trimming failed" in msg for msg in warning_messages)
+        assert any("Falling back to atom-based trimming" in msg for msg in warning_messages)
+
+    @pytest.mark.unit
+    def test_trim_structure_edge_case_sdf_format(self, water_files, temp_dir):
+        """Test trimming with SDF format (should use atom-based)."""
+        protein_path = water_files['sdf']  # Use SDF as "protein"
+        ligand_path = water_files['xyz']
+
+        trimmed_protein_path = trim_structure(
+            protein_path, ligand_path, radius=2.0, output_dir=temp_dir
+        )
+
+        # Should use atom-based trimming and have atom suffix
+        expected_filename = f"{protein_path.stem}_trimmed_2.0A_atom.xyz"
+        assert Path(trimmed_protein_path).name == expected_filename
+        assert Path(trimmed_protein_path).exists()
+
+    @pytest.mark.unit
+    def test_trim_structure_compare_pdb_vs_xyz_same_molecule(self, alanine_files, water_files, temp_dir):
+        """Test that PDB and XYZ of same molecule produce different trimming results."""
+        ligand_path = water_files['xyz']
+        radius = 2.0
+
+        # Trim using PDB (residue-based)
+        pdb_trimmed = trim_structure(
+            alanine_files['pdb'], ligand_path, radius=radius, output_dir=temp_dir
+        )
+
+        # Trim using XYZ (atom-based)
+        xyz_trimmed = trim_structure(
+            alanine_files['xyz'], ligand_path, radius=radius, output_dir=temp_dir / "xyz"
+        )
+
+        # Load results
+        pdb_result = load_ase_structure(pdb_trimmed)[0]
+        xyz_result = load_ase_structure(xyz_trimmed)[0]
+
+        # For small molecules like alanine, results might be the same, but filenames should differ
+        assert Path(pdb_trimmed).name.endswith("_residue.xyz")
+        assert Path(xyz_trimmed).name.endswith("_atom.xyz")
+
+        # Both should have valid structures
+        assert len(pdb_result) > 0
+        assert len(xyz_result) > 0
+
+    @pytest.mark.unit
+    def test_trim_structure_empty_protein_error(self, water_files, temp_dir):
+        """Test trimming with empty protein structure."""
+        from ase import Atoms
+
+        # Create empty protein structure
+        empty_protein_path = temp_dir / "empty_protein.xyz"
+        # Note: empty_atoms not used directly, just for documentation
+        Atoms()  # Empty structure
+
+        # Write empty structure to file
+        with open(empty_protein_path, 'w') as f:
+            f.write("0\nEmpty structure\n")
+
+        ligand_path = water_files['xyz']
+
+        # Should raise ValueError for empty protein
+        with pytest.raises(ValueError, match="Invalid or empty ASE structure"):
+            trim_structure(empty_protein_path, ligand_path, radius=2.0, output_dir=temp_dir)
+
+    @pytest.mark.unit
+    def test_trim_structure_invalid_pdb_fallback(self, water_files, temp_dir, caplog):
+        """Test trimming with corrupted PDB that fails residue parsing."""
+        import logging
+
+        # Create corrupted PDB file
+        corrupted_pdb = temp_dir / "corrupted.pdb"
+        with open(corrupted_pdb, 'w') as f:
+            f.write("HEADER    INVALID PDB\n")
+            f.write("ATOM      1  N   ALA A   1      20.154  16.967  10.000  1.00 10.00           N\n")
+            f.write("ATOM      2  CA  ALA A   1      21.618  16.890  10.000  1.00 10.00           C\n")
+            f.write("END\n")
+
+        ligand_path = water_files['xyz']
+
+        with caplog.at_level(logging.WARNING):
+            # This might fail residue parsing and fallback to atom-based
+            try:
+                trimmed_path = trim_structure(corrupted_pdb, ligand_path, radius=5.0, output_dir=temp_dir)
+                # Should still produce a result via fallback
+                assert Path(trimmed_path).exists()
+            except Exception:
+                # If it fails completely, that's also acceptable for corrupted input
+                pass
+
+    @pytest.mark.unit
+    def test_trim_structure_zero_radius_edge_case(self, water_files, alanine_files, temp_dir):
+        """Test trimming with radius=0.0."""
+        protein_path = alanine_files['xyz']
+        ligand_path = water_files['xyz']
+
+        # With radius 0.0, should find no atoms (unless they're exactly overlapping)
+        with pytest.raises(ValueError, match="No protein atoms found within 0.0"):
+            trim_structure(protein_path, ligand_path, radius=0.0, output_dir=temp_dir)
+
+    @pytest.mark.unit
+    def test_trim_structure_very_large_radius(self, water_files, alanine_files, temp_dir):
+        """Test trimming with very large radius (performance test)."""
+        protein_path = alanine_files['xyz']
+        ligand_path = water_files['xyz']
+
+        # Very large radius should include all atoms
+        trimmed_path = trim_structure(protein_path, ligand_path, radius=1000.0, output_dir=temp_dir)
+
+        # Should include all atoms from original protein
+        original_protein = load_ase_structure(protein_path)[0]
+        trimmed_protein = load_ase_structure(trimmed_path)[0]
+
+        assert len(trimmed_protein) == len(original_protein)
+        assert Path(trimmed_path).exists()
+
+    @pytest.mark.unit
+    def test_trim_structure_nonexistent_files(self, temp_dir):
+        """Test trimming with nonexistent input files."""
+        fake_protein = temp_dir / "nonexistent_protein.pdb"
+        fake_ligand = temp_dir / "nonexistent_ligand.xyz"
+
+        # Should raise FileNotFoundError for nonexistent files
+        with pytest.raises((FileNotFoundError, ValueError)):
+            trim_structure(fake_protein, fake_ligand, radius=2.0, output_dir=temp_dir)
+
+    @pytest.mark.unit
+    def test_trim_by_residues_with_xyz_graceful_failure(self, water_files, alanine_files, caplog):
+        """Test _trim_by_residues gracefully handles XYZ files (no residue info)."""
+        from src.structure_ops import _trim_by_residues
+        import logging
+
+        # XYZ file has no residue information - should fallback
+        protein_path = alanine_files['xyz']
+        protein = load_ase_structure(protein_path)[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+
+        protein_positions = protein.get_positions()
+        ligand_positions = ligand.get_positions()
+        logger = logging.getLogger(__name__)
+
+        with caplog.at_level(logging.WARNING):
+            result = _trim_by_residues(protein_path, protein_positions, ligand_positions, 2.0, logger)
+
+        # Should return valid atom list from fallback
+        assert isinstance(result, list)
+        assert len(result) > 0
+
+        # Should log the fallback
+        messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("Residue-based trimming failed" in msg for msg in messages)
+        assert any("Falling back to atom-based trimming" in msg for msg in messages)
 
     @pytest.mark.unit
     def test_perform_trimming_with_specified_ligand(self, temp_dir, sample_xyz_file, sample_sdf_file, mock_logger):

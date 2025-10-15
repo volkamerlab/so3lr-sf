@@ -139,7 +139,7 @@ def create_residue_atom_mapping(universe: mda.Universe) -> Dict[str, List[int]]:
 
 
 
-def _prepare_mda_universe(file_path: Path) -> mda.Universe:
+def prepare_mda_universe(file_path: Path) -> mda.Universe:
     """
     Helper function to create and prepare MDAnalysis Universe with elements.
 
@@ -212,7 +212,7 @@ def load_molecule_to_prolif(
                 f"Got: {suffix}. Use is_protein=False for non-PDB protein files."
             )
 
-        universe = _prepare_mda_universe(file_path)
+        universe = prepare_mda_universe(file_path)
         residue_mapping = create_residue_atom_mapping(universe)
 
         try:
@@ -228,7 +228,7 @@ def load_molecule_to_prolif(
             mol = Chem.MolFromPDBFile(str(file_path), removeHs=False)
             if mol is None:
                 # Fallback to MDAnalysis for complex PDB files
-                universe = _prepare_mda_universe(file_path)
+                universe = prepare_mda_universe(file_path)
                 return plf.Molecule.from_mda(universe)
             return plf.Molecule(mol)
 
@@ -240,7 +240,7 @@ def load_molecule_to_prolif(
 
         elif suffix == '.xyz':
             # XYZ files need MDAnalysis for proper handling
-            universe = _prepare_mda_universe(file_path)
+            universe = prepare_mda_universe(file_path)
             return plf.Molecule.from_mda(universe)
 
     except Exception as e:
