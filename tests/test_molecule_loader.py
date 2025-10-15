@@ -18,7 +18,7 @@ from src.molecule_loader import (
     read_sdf_multi,
     read_pdb_multi,
     load_ase_structure,
-    _prepare_mda_universe,
+    prepare_mda_universe,
     create_residue_atom_mapping,
     load_molecule_to_prolif
 )
@@ -150,11 +150,11 @@ class TestMoleculeLoader:
             load_ase_structure(nonexistent_file)
 
     def test_prepare_mda_universe_exception(self):
-        """Test _prepare_mda_universe with exception - MISSING LINE 134."""
+        """Test prepare_mda_universe with exception - MISSING LINE 134."""
         nonexistent_file = Path("/nonexistent/file.pdb")
 
         with pytest.raises((ValueError, FileNotFoundError)):
-            _prepare_mda_universe(nonexistent_file)
+            prepare_mda_universe(nonexistent_file)
 
     def test_create_residue_atom_mapping_empty(self):
         """Test create_residue_atom_mapping with empty universe - MISSING LINES 160-161."""
@@ -246,7 +246,7 @@ class TestMoleculeLoader:
             tmp_path = Path(tmp.name)
 
         try:
-            with patch('src.molecule_loader._prepare_mda_universe') as mock_prepare:
+            with patch('src.molecule_loader.prepare_mda_universe') as mock_prepare:
                 with patch('src.molecule_loader.create_residue_atom_mapping') as mock_mapping:
                     with patch('src.molecule_loader.plf.Molecule.from_mda') as mock_prolif:
                         mock_prepare.return_value = Mock()
@@ -280,7 +280,7 @@ class TestMoleculeLoader:
         # Should return ProLIF molecule (not testing exact type due to import complexity)
         assert result is not None
 
-    @patch('src.molecule_loader._prepare_mda_universe')
+    @patch('src.molecule_loader.prepare_mda_universe')
     @patch('src.molecule_loader.create_residue_atom_mapping')
     @patch('src.molecule_loader.plf.Molecule.from_mda')
     def test_load_molecule_to_prolif_success_protein(self, mock_prolif, mock_mapping, mock_prepare):
