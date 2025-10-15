@@ -413,6 +413,180 @@ class TestTrimStructure:
         assert any("Falling back to atom-based trimming" in msg for msg in messages)
 
     @pytest.mark.unit
+    def test_constrain_by_atoms_function(self, water_files, alanine_files):
+        """Test _constrain_by_atoms function directly."""
+        from src.structure_ops import _constrain_by_atoms
+        import logging
+
+        # Load test structures
+        protein = load_ase_structure(alanine_files['xyz'])[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+        complex_atoms = protein + ligand
+
+        logger = logging.getLogger(__name__)
+
+        # Test with very small radius (should fix many atoms)
+        fixed_atoms_small = _constrain_by_atoms(complex_atoms, len(protein), 0.5, logger)
+
+        # Test with large radius (should fix fewer/no atoms)
+        fixed_atoms_large = _constrain_by_atoms(complex_atoms, len(protein), 10.0, logger)
+
+        # Small radius should fix more atoms than large radius
+        assert len(fixed_atoms_small) >= len(fixed_atoms_large)
+
+        # All indices should be valid protein atom indices
+        for idx in fixed_atoms_small:
+            assert 0 <= idx < len(protein)
+        for idx in fixed_atoms_large:
+            assert 0 <= idx < len(protein)
+
+    @pytest.mark.unit
+    def test_constrain_by_residues_function(self, water_files, alanine_files):
+        """Test _constrain_by_residues function directly."""
+        from src.structure_ops import _constrain_by_residues
+        import logging
+
+        # Use PDB file for residue information
+        protein_path = alanine_files['pdb']
+        protein = load_ase_structure(protein_path)[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+        complex_atoms = protein + ligand
+
+        logger = logging.getLogger(__name__)
+
+        # Test residue-based constraints
+        fixed_atoms = _constrain_by_residues(complex_atoms, len(protein), 2.0, protein_path, logger)
+
+        # Should return valid atom indices
+        assert isinstance(fixed_atoms, list)
+        assert all(isinstance(idx, int) for idx in fixed_atoms)
+        assert all(0 <= idx < len(protein) for idx in fixed_atoms)
+
+        # Indices should be sorted
+        assert fixed_atoms == sorted(fixed_atoms)
+
+    @pytest.mark.unit
+    def test_constrain_by_residues_fallback(self, water_files, alanine_files, caplog):
+        """Test _constrain_by_residues falls back to atom-based on error."""
+        from src.structure_ops import _constrain_by_residues
+        import logging
+
+        # Use XYZ file which should cause residue parsing to fail
+        protein_path = alanine_files['xyz']
+        protein = load_ase_structure(protein_path)[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+        complex_atoms = protein + ligand
+
+        logger = logging.getLogger(__name__)
+
+        with caplog.at_level(logging.WARNING):
+            fixed_atoms = _constrain_by_residues(complex_atoms, len(protein), 2.0, protein_path, logger)
+
+        # Should still return valid results from fallback
+        assert isinstance(fixed_atoms, list)
+        assert all(0 <= idx < len(protein) for idx in fixed_atoms)
+
+        # Should have logged fallback warnings
+        warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("Residue-based constraints failed" in msg for msg in warning_messages)
+        assert any("Falling back to atom-based constraints" in msg for msg in warning_messages)
+
+    @pytest.mark.unit
+    def test_create_optimization_constraint_pdb_format(self, water_files, alanine_files, caplog):
+        """Test create_optimization_constraint with PDB format (residue-level)."""
+        from src.structure_ops import create_optimization_constraint
+        import logging
+
+        protein_path = alanine_files['pdb']
+        protein = load_ase_structure(protein_path)[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+        complex_atoms = protein + ligand
+
+        with caplog.at_level(logging.INFO):
+            constraint = create_optimization_constraint(
+                complex_atoms, len(protein), 2.0, protein_path
+            )
+
+        # Check info messages were logged
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        assert any("Using residue-level constraints for PDB file" in msg for msg in info_messages)
+        assert any("Complete residues will be flexible" in msg for msg in info_messages)
+
+        # Constraint could be None (if all atoms are flexible) or FixAtoms object
+        if constraint is not None:
+            from ase.constraints import FixAtoms
+            assert isinstance(constraint, FixAtoms)
+            assert all(0 <= idx < len(protein) for idx in constraint.indices)
+
+    @pytest.mark.unit
+    def test_create_optimization_constraint_xyz_format(self, water_files, alanine_files, caplog):
+        """Test create_optimization_constraint with XYZ format (atom-level)."""
+        from src.structure_ops import create_optimization_constraint
+        import logging
+
+        protein_path = alanine_files['xyz']
+        protein = load_ase_structure(protein_path)[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+        complex_atoms = protein + ligand
+
+        with caplog.at_level(logging.WARNING):
+            constraint = create_optimization_constraint(
+                complex_atoms, len(protein), 2.0, protein_path
+            )
+
+        # Check warning messages were logged
+        warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("Using atom-level constraints" in msg for msg in warning_messages)
+        assert any("residues may be split" in msg for msg in warning_messages)
+        assert any("use PDB format input files" in msg for msg in warning_messages)
+
+        # Constraint could be None or FixAtoms object
+        if constraint is not None:
+            from ase.constraints import FixAtoms
+            assert isinstance(constraint, FixAtoms)
+
+    @pytest.mark.unit
+    def test_create_optimization_constraint_no_protein_path(self, water_files, alanine_files, caplog):
+        """Test create_optimization_constraint with no protein path (defaults to atom-level)."""
+        from src.structure_ops import create_optimization_constraint
+        import logging
+
+        protein = load_ase_structure(alanine_files['xyz'])[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+        complex_atoms = protein + ligand
+
+        with caplog.at_level(logging.INFO):
+            constraint = create_optimization_constraint(
+                complex_atoms, len(protein), 2.0, None
+            )
+
+        # Check default message was logged
+        info_messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+        assert any("No protein path provided - using atom-level constraints" in msg for msg in info_messages)
+
+    @pytest.mark.unit
+    def test_optimize_structure_with_protein_path(self, mock_calculator, water_files, alanine_files, temp_dir):
+        """Test optimize_structure includes protein_path parameter."""
+        protein = load_ase_structure(alanine_files['xyz'])[0]
+        ligand = load_ase_structure(water_files['xyz'])[0]
+        complex_atoms = protein + ligand
+
+        output_path = temp_dir / "optimized_complex.xyz"
+
+        # Test that the function accepts the protein_path parameter
+        result_path, info = optimize_structure(
+            complex_atoms, mock_calculator,
+            optimizer='FIRE', fmax=0.1, steps=1,  # Minimal steps for testing
+            output_path=output_path,
+            opt_radius=2.0, n_protein_atoms=len(protein),
+            protein_path=alanine_files['pdb']  # NEW parameter
+        )
+
+        # Should complete without error
+        assert Path(result_path).exists()
+        assert 'output_file' in info
+
+    @pytest.mark.unit
     def test_perform_trimming_with_specified_ligand(self, temp_dir, sample_xyz_file, sample_sdf_file, mock_logger):
         """Test perform_trimming with specified trim ligand."""
         from src.structure_ops import perform_trimming
