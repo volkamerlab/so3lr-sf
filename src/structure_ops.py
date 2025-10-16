@@ -742,11 +742,7 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
         logger.info(f"  Interaction energy: {interaction_energy:.6f} eV "
                    f"({interaction_energy * 23.06:.2f} kcal/mol)")
 
-        # Log explainability component totals
-        if analysis.get('component_totals'):
-            logger.info("  Component contributions:")
-            for comp, total in analysis['component_totals'].items():
-                logger.info(f"    {comp}: {total:.6f} eV")
+        # Component totals are available in analysis['component_totals'] if needed
 
         # Log EDA component totals
         if analysis.get('interaction_energy_components'):

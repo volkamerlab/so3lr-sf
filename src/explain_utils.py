@@ -211,7 +211,7 @@ def add_interaction_summary(fig: plt.Figure, atom_mappings: List[Dict[str, Any]]
 
     # Start position to center the entire legend
     x_start = 0.5 - (total_width / 2)
-    y_pos = 0.87  # Slightly higher position
+    y_pos = 0.84  # Move down one more line
     x_current = x_start
 
     for i, (category, count, text) in enumerate(text_parts):
@@ -329,9 +329,11 @@ def residue_weights_calculation(
             else:
                 residue_weights[residue][comp] = 0.0
 
-    # Calculate total contribution per residue
+    # Calculate total contribution per residue (sum of individual components)
     for residue, comp_dict in residue_weights.items():
-        comp_dict['Total'] = sum(comp_dict.values())
+        # Only sum the non-Total components to get the actual total
+        total = sum(value for key, value in comp_dict.items() if key != 'Total')
+        comp_dict['Total'] = total
 
     return residue_weights
 
@@ -393,13 +395,27 @@ def compute_energy_differences(
                 protein_diff = protein_part - protein_alone
                 protein_differences[mapped_comp] = protein_diff
 
-    # Calculate total as sum of all components
+    # Calculate total as element-wise sum of displayed components only
     if ligand_differences:
-        ligand_differences['Total'] = sum(ligand_differences.values())
+        # Calculate total by summing the arrays element-wise
+        total_array = None
+        for comp_name, comp_array in ligand_differences.items():
+            if total_array is None:
+                total_array = comp_array.copy()
+            else:
+                total_array += comp_array
+        ligand_differences['Total'] = total_array
         ligand_dict = {comp: values.tolist() for comp, values in ligand_differences.items()}
 
         if protein_differences and protein_mode:
-            protein_differences['Total'] = sum(protein_differences.values())
+            # Calculate protein total by summing the arrays element-wise
+            protein_total_array = None
+            for comp_name, comp_array in protein_differences.items():
+                if protein_total_array is None:
+                    protein_total_array = comp_array.copy()
+                else:
+                    protein_total_array += comp_array
+            protein_differences['Total'] = protein_total_array
             protein_dict = {comp: values.tolist() for comp, values in protein_differences.items()}
             return ligand_dict, protein_dict
         else:

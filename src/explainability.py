@@ -6,6 +6,7 @@ by calculating energy differences and generating molecular heatmaps.
 """
 
 import io
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -15,6 +16,8 @@ from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 import prolif as plf
+
+logger = logging.getLogger(__name__)
 
 from .molecule_loader import load_molecule_to_prolif
 from .explain_utils import (compute_protein_ligand_interactions, get_atom_mappings, create_colorbar, similarity_map_gen, get_interaction_color,
@@ -126,7 +129,7 @@ def _build_atom_colors(
     for idx, weight in enumerate(weights):
         if np.isnan(weight):
             atom_colors[idx] = (0.8, 0.8, 0.8)
-            print(f"Warning: Atom index {idx} has NaN weight, coloring as light gray.")
+            logger.warning(f"Atom index {idx} has NaN weight, coloring as light gray.")
             continue
 
         normalized = max(-1.0, min(1.0, weight / safe_scale))
@@ -145,16 +148,17 @@ def _draw_interaction_map(
     """
     Render the augmented molecule with RDKit's 2D drawer.
     """
-    rdDepictor.Compute2DCoords(molecule, bondLength=4.0, forceRDKit=True)
-    drawer = rdMolDraw2D.MolDraw2DCairo(1200, 1200)
+    rdDepictor.Compute2DCoords(molecule, bondLength=3.0, forceRDKit=True)
+    drawer = rdMolDraw2D.MolDraw2DCairo(2400, 2400)
     draw_options = drawer.drawOptions()
     draw_options.circleAtoms = True
     draw_options.fillHighlights = True
     draw_options.continuousHighlight = False
     draw_options.highlightRadius = 0.5
-    draw_options.bondLineWidth = 3
-    draw_options.minFontSize = 12
-    draw_options.maxFontSize = 18
+    # Scale up line width and font sizes proportionally for higher resolution
+    draw_options.bondLineWidth = 6
+    draw_options.minFontSize = 28
+    draw_options.maxFontSize = 38
 
     drawer.DrawMolecule(
         molecule,
@@ -170,7 +174,8 @@ def generate_ligand_heatmap(
     ligand_path: Union[str, Path],
     ligand_energy_differences: Dict[str, np.ndarray],
     output_path: Optional[Union[str, Path]] = None,
-    title: Optional[str] = None
+    title: Optional[str] = None,
+    total_interaction_energy: Optional[float] = None
 ) -> plt.Figure:
     """
     Generate basic ligand heatmap visualization for energy contributions.
@@ -222,16 +227,30 @@ def generate_ligand_heatmap(
         # Add colorbar
         create_colorbar(fig, ax, global_max, component, weights)
 
-    # Add main title
+    # Add main title with clarification about ligand-only contributions
     if title:
-        fig.suptitle(title, fontsize=16, y=0.95)
+        # Calculate percentage of total interaction energy if provided
+        if total_interaction_energy is not None and 'Total' in ligand_energy_differences:
+            # Sum the ligand Total contributions
+            ligand_total = float(np.sum(ligand_energy_differences['Total']))
+
+            # Calculate percentage
+            if abs(total_interaction_energy) > 1e-9:
+                percentage = abs(ligand_total / total_interaction_energy) * 100
+                clarified_title = f"{title}\n(Ligand Only: {percentage:.1f}% of Total Binding Energy)"
+            else:
+                clarified_title = f"{title}\n(Ligand Atom Energy Contributions Only)"
+        else:
+            clarified_title = f"{title}\n(Ligand Atom Energy Contributions Only)"
+
+        fig.suptitle(clarified_title, fontsize=16, y=0.95)
 
     plt.tight_layout()
 
     # Save figure if requested
     if output_path:
         fig.savefig(str(output_path), dpi=300, bbox_inches='tight')
-        print(f"Ligand heatmap saved to: {output_path}")
+        logger.info(f"Ligand heatmap saved to: {output_path}")
 
     return fig
 
@@ -244,6 +263,7 @@ def generate_protein_interaction_heatmap(
     residue_atom_mapping: Optional[Dict[str, List[int]]] = None,
     output_path: Optional[Union[str, Path]] = None,
     title: Optional[str] = None,
+    total_interaction_energy: Optional[float] = None,
 ) -> plt.Figure:
     """
     Generate protein-ligand interaction heatmap visualization combining  interaction bonds and energy contributions for ligands with the interacting residues.
@@ -275,6 +295,11 @@ def generate_protein_interaction_heatmap(
     n_components = len(ligand_energy_differences)
     fig = plt.figure(figsize=(5 * n_components, 7))
 
+    # Store extended weights for Total component for percentage calculation
+    total_extended_weights = None
+    ligand_energy_percent = None
+    if total_interaction_energy is not None and 'Total' in ligand_energy_differences and abs(total_interaction_energy) > 1e-9:
+        ligand_energy_percent = (sum(ligand_energy_differences['Total']) / total_interaction_energy) * 100
     for idx, (component, weights) in enumerate(ligand_energy_differences.items()):
         ax = fig.add_subplot(1, n_components, idx + 1)
         weights_array = np.asarray(weights, dtype=float)
@@ -282,8 +307,6 @@ def generate_protein_interaction_heatmap(
         global_max = float(np.max(np.abs(weights_array))) if weights_array.size else 1.0
         if global_max == 0:
             global_max = 1e-6
-
-        print(f"{component}: max absolute contribution = {global_max:.6f} eV")
 
         (
             lig_with_interactions,
@@ -298,6 +321,10 @@ def generate_protein_interaction_heatmap(
             weights_array,
         )
 
+        # Store extended weights for Total component for percentage calculation
+        if component == 'Total':
+            total_extended_weights = extended_weights.copy()
+
         atom_colors = _build_atom_colors(extended_weights, global_max)
         ligand_heatmap_img = _draw_interaction_map(
             lig_with_interactions,
@@ -308,11 +335,29 @@ def generate_protein_interaction_heatmap(
 
         ax.imshow(ligand_heatmap_img)
         ax.axis("off")
-        create_colorbar(fig, ax, global_max, component, weights_array)
+        # Use extended_weights which includes both ligand and protein residue contributions
+        create_colorbar(fig, ax, global_max, component, np.array(extended_weights))
 
-    # Add main title
+    # Add main title with clarification about contributions included
     if title:
-        fig.suptitle(title, fontsize=16, y=0.95)
+        # Calculate percentage of total interaction energy if provided
+        if total_interaction_energy is not None and total_extended_weights is not None:
+            # Sum the total extended weights (ligand + protein residues)
+            displayed_total = float(np.sum(total_extended_weights))
+
+            # Calculate percentage
+            if abs(total_interaction_energy) > 1e-9:
+                percentage = abs(displayed_total / total_interaction_energy) * 100
+                if ligand_energy_percent is not None:
+                    clarified_title = f"{title}\n(Total Binding Energy of the Ligand {ligand_energy_percent:.1f} + Interacting Residues: {percentage - ligand_energy_percent:.1f}%)"
+                else:
+                    clarified_title = f"{title}\n(Ligand + Interacting Residues: {percentage:.1f}% of Total Binding Energy)"
+            else:
+                clarified_title = f"{title}\n(Ligand + Interacting Protein Residue Contributions)"
+        else:
+            clarified_title = f"{title}\n(Ligand + Interacting Protein Residue Contributions)"
+
+        fig.suptitle(clarified_title, fontsize=16, y=0.95)
 
     # Add interaction summary at bottom
     add_interaction_summary(fig, atom_mappings)
@@ -323,7 +368,7 @@ def generate_protein_interaction_heatmap(
     if output_path:
         output_path = Path(output_path).with_stem(output_path.stem + "_ifp")
         fig.savefig(str(output_path), dpi=300, bbox_inches='tight')
-        print(f"Protein interaction heatmap saved to: {output_path}")
+        logger.info(f"Protein interaction heatmap saved to: {output_path}")
 
     return fig
 
@@ -334,7 +379,8 @@ def generate_energy_heatmap(
     output_path: Optional[Union[str, Path]] = None,
     title: Optional[str] = None,
     protein_energy_differences: Optional[Dict[str, np.ndarray]] = None,
-    preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None
+    preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None,
+    total_interaction_energy: Optional[float] = None
 ) -> plt.Figure:
     """
     Generate heatmap visualization of ligand atom energy contributions.
@@ -352,7 +398,7 @@ def generate_energy_heatmap(
         plt.Figure: Generated matplotlib figure with optional protein residue information
     """
     ligand_path = Path(ligand_path)
-    print(f"Generating heatmap for ligand: {ligand_path}")
+    logger.info(f"Generating heatmap for ligand: {ligand_path}")
     # Read ligand molecule for visualization using universal function
     mol = load_molecule_to_prolif(ligand_path)
 
@@ -360,7 +406,7 @@ def generate_energy_heatmap(
     if preloaded_protein_prolif is not None:
         atom_mappings = _fp_interaction_mapping(preloaded_protein_prolif, mol)
         residue_atom_mapping = preloaded_protein_prolif[1]  # Get residue mapping
-
+        output_path = Path(output_path).with_stem(output_path.stem + "_ifp") if output_path else None
         # Use the protein interaction heatmap with proper bond coloring and interaction legends
         return generate_protein_interaction_heatmap(
             ligand_path=ligand_path,
@@ -369,7 +415,8 @@ def generate_energy_heatmap(
             protein_energy_differences=protein_energy_differences,
             residue_atom_mapping=residue_atom_mapping,
             output_path=output_path,
-            title=title
+            title=title,
+            total_interaction_energy=total_interaction_energy
         )
 
     else:
@@ -378,5 +425,6 @@ def generate_energy_heatmap(
             ligand_path=ligand_path,
             ligand_energy_differences=ligand_energy_differences,
             output_path=output_path,
-            title=title
+            title=title,
+            total_interaction_energy=total_interaction_energy
         )

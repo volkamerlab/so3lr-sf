@@ -223,7 +223,8 @@ def compute_eda_analysis(protein_components: Dict, ligand_components: Dict, comp
 def analyze_explainability(protein_components: Dict, ligand_components: Dict, complex_components: Dict,
                          protein_atoms: Atoms, ligand_atoms: Atoms, ligand_path: Union[str, Path],
                          heatmap_output: Optional[Union[str, Path]] = None, logger=None,
-                         preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None) -> Dict[str, Any]:
+                         preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None,
+                         interaction_energy: Optional[float] = None) -> Dict[str, Any]:
     """
     Perform explainability analysis and generate heatmap.
 
@@ -274,11 +275,9 @@ def analyze_explainability(protein_components: Dict, ligand_components: Dict, co
             title = f"Protein-Ligand Interaction: {ligand_name}"
 
             fig = generate_energy_heatmap(
-                ligand_path, ligand_energy_differences, heatmap_output, title, protein_energy_differences, preloaded_protein_prolif
+                ligand_path, ligand_energy_differences, heatmap_output, title, protein_energy_differences, preloaded_protein_prolif, interaction_energy
             )
-            heatmap_path = str(heatmap_output)
-            logger.info(f"Heatmap saved successfully: {heatmap_path}")
-
+            
             # Clean up matplotlib figure
             plt.close(fig)
 
@@ -291,7 +290,7 @@ def analyze_explainability(protein_components: Dict, ligand_components: Dict, co
         'component_totals': {
             comp: float(np.sum(values)) for comp, values in ligand_energy_differences.items()
         } if ligand_energy_differences else {},
-        'heatmap_path': heatmap_path,
+        'heatmap_path': str(heatmap_output),
     }
 
     logger.info("Explainability analysis complete")
@@ -391,7 +390,8 @@ def protein_ligand_interaction(
         explainability_analysis = analyze_explainability(
             protein_components, ligand_components, complex_components,
             protein_atoms, ligand_atoms, ligand_path, heatmap_output, logger,
-            preloaded_protein_prolif=preloaded_protein_prolif
+            preloaded_protein_prolif=preloaded_protein_prolif,
+            interaction_energy=interaction_energy
         )
         analysis.update(explainability_analysis)
 
