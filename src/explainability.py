@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 from pathlib import Path
-from typing import Dict, Any, Union, Optional, Tuple, List
+from typing import Dict, Any, Union, Optional, Tuple, List, Sequence
 from rdkit import Chem
 from rdkit.Chem import rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
@@ -38,6 +38,134 @@ def _fp_interaction_mapping(preloaded_protein_prolif: plf.Molecule,
     
     return atom_mappings
 
+
+def _group_interactions_by_residue(
+    atom_mappings: List[Dict[str, Any]]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Collect ligand interactions grouped by protein residue.
+    """
+    residue_interactions: Dict[str, List[Dict[str, Any]]] = {}
+    for mapping in atom_mappings:
+        residue = mapping.get("protein_residue", "Unknown")
+        interaction = {
+            "ligand_atoms": mapping.get("ligand_atoms", []),
+            "interaction_type": mapping.get("interaction_type", "Unknown"),
+        }
+        residue_interactions.setdefault(residue, []).append(interaction)
+    return residue_interactions
+
+
+def _augment_molecule_with_residues(
+    rdkit_mol: Chem.Mol,
+    residue_interactions: Dict[str, List[Dict[str, Any]]],
+    residue_weights: Optional[Dict[str, Dict[str, float]]],
+    component: str,
+    base_weights: Sequence[float],
+) -> Tuple[Chem.RWMol, List[float], List[int], Dict[int, Tuple[float, float, float]]]:
+    """
+    Attach residue pseudo-atoms and highlight bonds to the ligand copy.
+    """
+    lig_with_interactions = Chem.RWMol(rdkit_mol)
+    highlight_bonds: List[int] = []
+    highlight_bond_colors: Dict[int, Tuple[float, float, float]] = {}
+    seen_bonds: set[int] = set()
+    extended_weights = [float(weight) for weight in base_weights]
+    original_atom_count = rdkit_mol.GetNumAtoms()
+
+    for residue, interactions in residue_interactions.items():
+        residue_atom = Chem.Atom(0)
+        residue_atom.SetProp("atomLabel", residue)
+        residue_idx = lig_with_interactions.AddAtom(residue_atom)
+
+        component_energy = 0.0
+        if residue_weights and residue in residue_weights:
+            component_energy = float(residue_weights[residue].get(component, 0.0))
+        extended_weights.append(component_energy)
+
+        for interaction in interactions:
+            ligand_atoms = interaction.get("ligand_atoms", [])
+            if not ligand_atoms:
+                continue
+
+            bond_color = get_interaction_color(interaction.get("interaction_type"))
+            for ligand_atom_idx in ligand_atoms:
+                if ligand_atom_idx >= original_atom_count:
+                    continue
+
+                bond = lig_with_interactions.GetBondBetweenAtoms(residue_idx, ligand_atom_idx)
+                if bond is None:
+                    lig_with_interactions.AddBond(residue_idx, ligand_atom_idx, Chem.BondType.ZERO)
+                    bond = lig_with_interactions.GetBondBetweenAtoms(residue_idx, ligand_atom_idx)
+                if bond is None:
+                    continue
+
+                bond_idx = bond.GetIdx()
+                if bond_idx in seen_bonds:
+                    continue
+
+                seen_bonds.add(bond_idx)
+                highlight_bonds.append(bond_idx)
+                highlight_bond_colors[bond_idx] = bond_color
+
+    return lig_with_interactions, extended_weights, highlight_bonds, highlight_bond_colors
+
+
+def _build_atom_colors(
+    weights: Sequence[float],
+    scale: float,
+    colormap: Optional[Any] = None,
+) -> Dict[int, Tuple[float, float, float]]:
+    """
+    Convert weights to color values for RDKit highlighting.
+    """
+    colormap = colormap or plt.get_cmap("bwr")
+    safe_scale = max(scale, 1e-6)
+    atom_colors: Dict[int, Tuple[float, float, float]] = {}
+
+    for idx, weight in enumerate(weights):
+        if np.isnan(weight):
+            atom_colors[idx] = (0.8, 0.8, 0.8)
+            print(f"Warning: Atom index {idx} has NaN weight, coloring as light gray.")
+            continue
+
+        normalized = max(-1.0, min(1.0, weight / safe_scale))
+        color_value = (normalized + 1.0) / 2.0
+        atom_colors[idx] = tuple(colormap(color_value)[:3])
+
+    return atom_colors
+
+
+def _draw_interaction_map(
+    molecule: Chem.Mol,
+    atom_colors: Dict[int, Tuple[float, float, float]],
+    highlight_bonds: List[int],
+    highlight_bond_colors: Dict[int, Tuple[float, float, float]],
+) -> np.ndarray:
+    """
+    Render the augmented molecule with RDKit's 2D drawer.
+    """
+    rdDepictor.Compute2DCoords(molecule, bondLength=4.0, forceRDKit=True)
+    drawer = rdMolDraw2D.MolDraw2DCairo(1200, 1200)
+    draw_options = drawer.drawOptions()
+    draw_options.circleAtoms = True
+    draw_options.fillHighlights = True
+    draw_options.continuousHighlight = False
+    draw_options.highlightRadius = 0.5
+    draw_options.bondLineWidth = 3
+    draw_options.minFontSize = 12
+    draw_options.maxFontSize = 18
+
+    drawer.DrawMolecule(
+        molecule,
+        highlightAtoms=list(atom_colors.keys()),
+        highlightAtomColors=atom_colors,
+        highlightBonds=highlight_bonds,
+        highlightBondColors=highlight_bond_colors,
+    )
+    drawer.FinishDrawing()
+    return np.asarray(Image.open(io.BytesIO(drawer.GetDrawingText())))
+
 def generate_ligand_heatmap(
     ligand_path: Union[str, Path],
     ligand_energy_differences: Dict[str, np.ndarray],
@@ -57,7 +185,6 @@ def generate_ligand_heatmap(
         plt.Figure: Generated matplotlib figure with ligand energy heatmaps
     """
     ligand_path = Path(ligand_path)
-    print(f"Generating ligand heatmap for: {ligand_path}")
 
     # Read ligand molecule for visualization
     mol = load_molecule_to_prolif(ligand_path)
@@ -134,159 +261,54 @@ def generate_protein_interaction_heatmap(
         plt.Figure: Generated matplotlib figure with energy heatmaps and interaction visualization
     """
     ligand_path = Path(ligand_path)
-    print(f"Generating protein interaction heatmap for ligand: {ligand_path}")
 
-    # Load ligand molecule
     mol = load_molecule_to_prolif(ligand_path)
-    rdkit_mol = mol.mol if hasattr(mol, 'mol') else mol
+    rdkit_mol = mol.mol if hasattr(mol, "mol") else mol
 
-    # Calculate residue weights if protein energy differences are available
     residue_weights = None
     if protein_energy_differences is not None and residue_atom_mapping is not None:
-        residue_weights = residue_weights_calculation(
-            residue_atom_mapping, protein_energy_differences
-        )
+        residue_weights = residue_weights_calculation(residue_atom_mapping, protein_energy_differences)
 
-    # Create figure for integrated ligand-residue visualization
+    residue_interactions = _group_interactions_by_residue(atom_mappings)
+    rdDepictor.Compute2DCoords(rdkit_mol, bondLength=3.0)
+
     n_components = len(ligand_energy_differences)
-    fig = plt.figure(figsize=(5*n_components, 7))
+    fig = plt.figure(figsize=(5 * n_components, 7))
 
-    # Generate ligand heatmaps with integrated residue interactions
-    for i, (component, weights) in enumerate(ligand_energy_differences.items()):
-        ax = fig.add_subplot(1, n_components, i + 1)
+    for idx, (component, weights) in enumerate(ligand_energy_differences.items()):
+        ax = fig.add_subplot(1, n_components, idx + 1)
+        weights_array = np.asarray(weights, dtype=float)
 
-        global_max = float(np.max(np.abs(weights))) if len(weights) > 0 else 1.0
+        global_max = float(np.max(np.abs(weights_array))) if weights_array.size else 1.0
         if global_max == 0:
             global_max = 1e-6
 
         print(f"{component}: max absolute contribution = {global_max:.6f} eV")
 
-        # Create molecule with residue pseudo-atoms for this component
-        # First compute 2D coordinates for the original ligand
-        rdDepictor.Compute2DCoords(rdkit_mol, bondLength=3.0)
-        lig_with_interactions = Chem.RWMol(rdkit_mol)
-
-        # Group interactions by residue with detailed interaction info
-        # Filter to only include protein-ligand interactions (exclude protein-protein)
-        residue_interactions = {}
-        for mapping in atom_mappings:
-            residue = mapping.get('protein_residue', 'Unknown')
-            interaction_type = mapping.get('interaction_type', 'Unknown')
-            ligand_atoms = mapping.get('ligand_atoms', [])
-
-
-            if residue not in residue_interactions:
-                residue_interactions[residue] = []
-
-            # Add interaction details for this residue
-            residue_interactions[residue].append({
-                'ligand_atoms': ligand_atoms,
-                'interaction_type': interaction_type
-            })
-
-        # Build visualization elements
-        highlight_bonds = []
-        highlight_bond_colors = {}
-        seen_bonds = set()
-        extended_weights = list(weights)  # Start with original ligand weights
-
-        # Process unique residues and create one pseudoatom per residue
-        for residue, interactions_list in residue_interactions.items():
-            # Create residue pseudo-atom with proper label (only once per residue)
-            res_atom = Chem.Atom(0)  # Dummy atom
-            res_atom.SetProp('atomLabel', residue)
-            res_idx = lig_with_interactions.AddAtom(res_atom)
-
-            # Add weight for this residue pseudo-atom to extended weights
-            if residue_weights and residue in residue_weights:
-                # Use the component-specific energy for this residue as its weight
-                component_energy = residue_weights[residue].get(component, 0.0)
-                extended_weights.append(component_energy)
-            else:
-                # Default weight of 0 for residues without energy data
-                extended_weights.append(0.0)
-
-            # Process each interaction for this residue
-            for interaction in interactions_list:
-                ligand_atoms = interaction['ligand_atoms']
-                interaction_type = interaction['interaction_type']
-                bond_color = get_interaction_color(interaction_type)
-
-                # Add colored bonds from residue pseudo-atom to ligand atoms for this specific interaction
-                for ligand_atom_idx in ligand_atoms:
-                    if ligand_atom_idx < rdkit_mol.GetNumAtoms():  # Use original molecule atom count
-                        # Check if bond already exists to avoid duplicates
-                        existing_bond = lig_with_interactions.GetBondBetweenAtoms(res_idx, ligand_atom_idx)
-                        if not existing_bond:
-                            lig_with_interactions.AddBond(res_idx, ligand_atom_idx, Chem.BondType.ZERO)
-                            bond = lig_with_interactions.GetBondBetweenAtoms(res_idx, ligand_atom_idx)
-
-                            if bond is not None:
-                                bond_idx = bond.GetIdx()
-                                if bond_idx not in seen_bonds:
-                                    seen_bonds.add(bond_idx)
-                                    highlight_bonds.append(bond_idx)
-                                    highlight_bond_colors[bond_idx] = bond_color
-
-        # Create unified heatmap with both ligand atoms and residue pseudo-atoms
-        similarity_kwargs = dict(
-            sigma=0.5,
-            gridResolution=0.02,
-            contourLines=4,
-            scale=global_max
-        )
-
-        # Use rdMolDraw2D directly with higher resolution
-        d2d = rdMolDraw2D.MolDraw2DCairo(1200, 1200)  # Higher resolution
-        opts = d2d.drawOptions()
-
-        # Configure drawing options back to normal
-        opts.circleAtoms = True
-        opts.fillHighlights = True
-        opts.continuousHighlight = False
-        opts.highlightRadius = 0.5       # Normal highlight radius
-        opts.bondLineWidth = 3
-        opts.minFontSize = 12
-        opts.maxFontSize = 18
-
-        # Create atom colors based on weights for heatmap effect
-        atom_colors = {}
-        colormap = plt.get_cmap("bwr")
-        scale = similarity_kwargs.get('scale', 1.0)
-
-        for i, weight in enumerate(extended_weights):
-            if np.isnan(weight):
-                # Use neutral color for NaN weights
-                atom_colors[i] = (0.8, 0.8, 0.8)  # Light gray
-                print(f"Warning: Atom index {i} has NaN weight, coloring as light gray.")
-                continue
-
-            # Use same scale for all atoms (ligand and pseudo-atoms)
-            normalized_weight = max(-1.0, min(1.0, weight / scale))
-            color_val = (normalized_weight + 1.0) / 2.0
-            rgb = colormap(color_val)[:3]
-            atom_colors[i] = rgb
-        # Compute 2D coordinates after adding pseudoatoms, with larger bond length to spread them out
-        rdDepictor.Compute2DCoords(lig_with_interactions, bondLength=4.0, forceRDKit=True)
-
-        # Draw molecule with both atom colors (heatmap) and bond colors (interactions)
-        d2d.DrawMolecule(
+        (
             lig_with_interactions,
-            highlightAtoms=list(atom_colors.keys()),
-            highlightBonds=highlight_bonds,
-            highlightAtomColors=atom_colors,
-            highlightBondColors=highlight_bond_colors
+            extended_weights,
+            highlight_bonds,
+            highlight_bond_colors,
+        ) = _augment_molecule_with_residues(
+            rdkit_mol,
+            residue_interactions,
+            residue_weights,
+            component,
+            weights_array,
         )
 
-        d2d.FinishDrawing()
-        ligand_heatmap_img = np.asarray(Image.open(io.BytesIO(d2d.GetDrawingText())))
+        atom_colors = _build_atom_colors(extended_weights, global_max)
+        ligand_heatmap_img = _draw_interaction_map(
+            lig_with_interactions,
+            atom_colors,
+            highlight_bonds,
+            highlight_bond_colors,
+        )
 
-        # Plot the unified visualization
         ax.imshow(ligand_heatmap_img)
         ax.axis("off")
-
-        # Add colorbar using shared helper
-        create_colorbar(fig, ax, global_max, component, weights)
+        create_colorbar(fig, ax, global_max, component, weights_array)
 
     # Add main title
     if title:
@@ -299,6 +321,7 @@ def generate_protein_interaction_heatmap(
 
     # Save figure if requested
     if output_path:
+        output_path = Path(output_path).with_stem(output_path.stem + "_ifp")
         fig.savefig(str(output_path), dpi=300, bbox_inches='tight')
         print(f"Protein interaction heatmap saved to: {output_path}")
 

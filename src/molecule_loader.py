@@ -233,7 +233,7 @@ def load_molecule_to_prolif(
             return plf.Molecule(mol)
 
         elif suffix == '.sdf':
-            mol = Chem.MolFromMolFile(str(file_path))
+            mol = Chem.MolFromMolFile(str(file_path), removeHs=False)
             if mol is None:
                 raise ValueError(f"RDKit could not parse SDF file: {file_path}")
             return plf.Molecule(mol)

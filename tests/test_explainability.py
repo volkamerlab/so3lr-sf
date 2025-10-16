@@ -179,7 +179,6 @@ class TestExplainabilityModule:
     ):
         """Test basic protein interaction heatmap generation."""
         ligand_path = water_files['xyz']
-        output_path = temp_dir / "test_protein_heatmap.png"
 
         fig = generate_protein_interaction_heatmap(
             ligand_path=ligand_path,
@@ -187,9 +186,10 @@ class TestExplainabilityModule:
             atom_mappings=sample_atom_mappings,
             protein_energy_differences=sample_protein_energy_differences,
             residue_atom_mapping=sample_residue_atom_mapping,
-            output_path=output_path,
+            output_path=temp_dir / "test_protein_heatmap.png",
             title="Test Protein Interaction Heatmap"
         )
+        output_path = temp_dir / "test_protein_heatmap_ifp.png"
 
         assert fig is not None
         assert isinstance(fig, plt.Figure)
@@ -456,7 +456,6 @@ class TestExplainabilityModule:
             'ASP89.A': [320, 321, 322, 323, 324, 325, 326, 327]
         }
 
-        output_path = temp_dir / "water_protein_interaction_integration.png"
 
         fig = generate_protein_interaction_heatmap(
             ligand_path=water_file,
@@ -464,10 +463,10 @@ class TestExplainabilityModule:
             atom_mappings=realistic_mappings,
             protein_energy_differences=sample_protein_energy_differences,
             residue_atom_mapping=residue_mapping,
-            output_path=output_path,
+            output_path=temp_dir / "water_protein_interaction.png",
             title="Water-Protein Interaction Integration Test"
         )
-
+        output_path = temp_dir / "water_protein_interaction_ifp.png"
         assert fig is not None
         assert output_path.exists()
         assert output_path.stat().st_size > 0
