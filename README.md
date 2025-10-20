@@ -6,15 +6,16 @@
 
 SO3LR-SF is a comprehensive Python package for calculating protein-ligand interaction energies using SO3LR machine learning force fields. It provides advanced features including structure optimization, explainability analysis, and molecular visualization.
 
-## 🚀 Features
+<details>
+<summary><h2>🚀 Features</h2></summary>
 
 ### Core Functionality
 - **Protein-Ligand Interaction Energy Calculation**: Calculate binding energies using SO3LR force fields
 - **Structure Optimization**: Optimize protein, ligand, and complex structures with FIRE/LBFGS algorithms
 - **Protein Trimming**: Trim protein structures around ligands to reduce computational cost
 - **Energy decomposition analysis (EDA)**: Analysis of each energy term individually
-- **Per-atom Explainability**: Generate per-atom energy contributions and molecular heatmaps
-- **Interaction-based Explainability**: ProLIF-powered protein-ligand interaction fingerprinting and visualization (@TODO)
+- **Ligand Explainability**: Generate per-atom energy contributions and 2D molecular heatmaps for ligands
+- **Protein-Ligand Interaction Explainability**: ProLIF-powered interaction fingerprinting with residue-level energy contributions and bond-colored visualizations
 - **Multi-Ligand Screening**: Process multiple ligands from SDF files or directories
 
 ### File Format Support
@@ -28,11 +29,65 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 - **Error Handling**: Robust error handling with detailed reporting
 - **Optimization Logging**: Detailed optimization trajectories and convergence data
 
-## 📦 Installation
+</details>
 
-@TODO
+<details>
+<summary><h2>📦 Installation</h2></summary>
 
-## 🏗️ Architecture
+### Prerequisites
+- Python 3.12 or higher
+- Poetry (package manager)
+- curl (for downloading model parameters)
+
+### Installation Steps
+
+```bash
+# Clone the repository
+git clone https://github.com/volkamerlab/so3lr-sf.git
+cd so3lr-sf
+
+# Run the setup script (installs dependencies and downloads SO3LR model parameters)
+python setup.py
+```
+
+The setup script will:
+1. Install all dependencies using Poetry
+2. Download SO3LR model parameters from the official repository
+3. Verify the installation
+
+### Manual Installation (Alternative)
+
+If you prefer manual installation:
+
+```bash
+# Clone the repository
+git clone https://github.com/volkamerlab/so3lr-sf.git
+cd so3lr-sf
+
+# Install dependencies
+poetry install --with test
+
+# Download model parameters
+mkdir -p so3lr
+cd so3lr
+curl -L https://github.com/general-molecular-simulations/so3lr/archive/main.tar.gz | tar -xz --strip-components=2 so3lr-main/so3lr/params
+cd ..
+```
+
+### Verify Installation
+
+```bash
+# Run tests to verify everything works
+poetry run pytest
+
+# Or test with a simple calculation
+poetry run python so3lr_sf.py --protein tests/test_data/alanine.xyz --ligands tests/test_data/water.sdf
+```
+
+</details>
+
+<details>
+<summary><h2>🏗️ Architecture</h2></summary>
 
 ### Module Organization
 ```
@@ -42,8 +97,9 @@ src/
 ├── interaction_energy.py              # Main energy calculation functions
 ├── structure_ops.py                   # Structure manipulation and optimization
 ├── explainability.py                  # Energy-based explainability analysis and visualization
-├── protein_ligand_explainability.py   # ProLIF-based protein-ligand interaction analysis
-├── utils.py                           # Utility functions and I/O operations
+├── explain_utils.py                   # Utility functions for explainability analysis
+├── molecule_loader.py                 # Molecule loading and file format handling
+├── utils.py                           # General utility functions and I/O operations
 └── __init__.py                        # Package interface
 ```
 ### Output directory Structure
@@ -59,7 +115,10 @@ results_steps_100_fmax0.05/
     └── ligand_002_heatmap.png
 ```
 
-## 🔧 Quick Start
+</details>
+
+<details>
+<summary><h2>🔧 Quick Start</h2></summary>
 
 ### Basic Usage
 
@@ -99,7 +158,10 @@ print(f"Binding energy: {interaction_energy * 23.06:.1f} kcal/mol")
 print(f"Component contributions: {analysis['component_totals']}")
 ```
 
-## 📋 Command Line Arguments
+</details>
+
+<details>
+<summary><h2>📋 Command Line Arguments</h2></summary>
 
 ### Required Arguments
 - `--protein`: Path to protein structure file
@@ -109,6 +171,7 @@ print(f"Component contributions: {analysis['component_totals']}")
 - `--trim`: Trim protein around ligand(s) before calculation
 - `--optimize`: Optimize structures before energy calculation
 - `--explain`: Generate explainability analysis and heatmaps
+- `--protein-explain`: Generate protein explainability with protein-ligand interaction analysis and interacting residue coloring depending on their energy contribution
 
 ### Trimming Parameters
 - `--radius FLOAT`: Radius in Angstroms for protein trimming (default: 10.0)
@@ -127,7 +190,10 @@ print(f"Component contributions: {analysis['component_totals']}")
 - `-v, --verbose`: Enable detailed logging output
 - `--opt-log`: Save optimization details to JSON file
 
-## 💡 Examples
+</details>
+
+<details>
+<summary><h2>💡 Examples</h2></summary>
 
 ### Example 1: Basic Calculation
 ```bash
@@ -136,7 +202,18 @@ python run_so3lr_sf.py \
     --ligands tests/test_data/water.sdf
 ```
 
-### Example 2: Optimized Workflow
+### Example 2: Multi-Ligand Screening + Trim the protein
+```bash
+python run_so3lr_sf.py \
+    --protein target.pdb \
+    --ligands ligand_library.sdf \
+    --trim \
+    --radius 10.0 \
+    --trim-lig ref_lig.sdf \
+    --verbose
+```
+
+### Example 3: Optimized Workflow
 ```bash
 python run_so3lr_sf.py \
     --protein protein.pdb \
@@ -145,10 +222,11 @@ python run_so3lr_sf.py \
     --optimizer FIRE \
     --fmax 0.05 \
     --steps 100 \
+    --opt-radius 4.0 \
     --verbose
 ```
 
-### Example 3: Full Analysis Pipeline
+### Example 4: Full Analysis Pipeline
 ```bash
 python run_so3lr_sf.py \
     --protein protein.pdb \
@@ -156,23 +234,25 @@ python run_so3lr_sf.py \
     --trim \
     --radius 8.0 \
     --optimize \
+    --opt-radius 4.0 \
     --explain \
     --opt-log \
     --verbose
 ```
 
-### Example 4: Multi-Ligand Screening
+### Example 5: Protein-Ligand Interaction Analysis
 ```bash
 python run_so3lr_sf.py \
-    --protein target.pdb \
-    --ligands ligand_library/ \
-    --trim \
-    --optimize \
-    --explain \
+    --protein protein.pdb \
+    --ligands ligand.sdf \
+    --protein-explain \
     --verbose
 ```
 
-## 📊 Output Files
+</details>
+
+<details>
+<summary><h2>📊 Output Files</h2></summary>
 
 ### Results Summary (`results_summary.json`)
 ```json
@@ -207,50 +287,13 @@ python run_so3lr_sf.py \
 }
 ```
 
+</details>
 
 
-## 🧪 Testing
 
-SO3LR-SF includes a comprehensive test suite ensuring reliability and correctness across all components.
 
-### Test Coverage
-- **6 Test Modules**: Complete coverage of all package functionality
-  - `test_calculator.py`: Unit and integration tests for SO3LR calculator implementation
-  - `test_structure_ops.py`: Structure manipulation, trimming, and optimization tests
-  - `test_utils.py`: I/O operations, file handling, and utility function tests
-  - `test_config.py`: Configuration management and model path discovery tests
-  - `conftest.py`: Shared fixtures and mock infrastructure
-- **Mock Infrastructure**: Comprehensive mocking for testing without heavy ML dependencies
-- **Integration Tests**: Real SO3LR model testing when available
-- **Minimum Coverage**: 40% baseline with detailed reporting via `.coveragerc`
-
-### Running Tests
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=src --cov-report=html
-
-# Run specific test categories
-pytest -m unit          # Fast unit tests only
-pytest -m integration   # Integration tests with real models
-pytest -m slow          # Comprehensive slow tests
-```
-
-### Test Infrastructure
-- **Automated CI/CD**: GitHub Actions pipeline with comprehensive testing
-  - Matrix testing on Ubuntu with Python 3.12
-  - Automatic SO3LR model download for integration tests
-  - Poetry dependency management with caching
-  - Coverage reporting with multiple formats (XML, HTML, JSON, badge)
-  - Codecov integration for coverage tracking
-  - PR coverage comments and push summary reports
-- **Mock Calculator**: Lightweight testing without SO3LR model dependencies
-- **Fixture Library**: Comprehensive test data and molecule fixtures
-- **Error Handling**: Robust testing of failure scenarios and edge cases
-
-## 🤝 Contributing
+<details>
+<summary><h2>🤝 Contributing</h2></summary>
 
 We welcome contributions! Please see our CONTRIBUTING.md (ro be written) for details on:
 - Code style and formatting
@@ -258,9 +301,17 @@ We welcome contributions! Please see our CONTRIBUTING.md (ro be written) for det
 - Documentation standards
 - Pull request process
 
+</details>
 
-## 📄 License
+
+<details>
+<summary><h2>📄 License</h2></summary>
+
+</details>
 
 
-## 📚 Citation
+<details>
+<summary><h2>📚 Citation</h2></summary>
+
+</details>
 
