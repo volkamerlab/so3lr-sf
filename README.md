@@ -10,24 +10,22 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 <summary><h2>🚀 Features</h2></summary>
 
 ### Core Functionality
-- **Protein-Ligand Interaction Energy Calculation**: Calculate binding energies using SO3LR force fields
-- **Structure Optimization**: Optimize protein, ligand, and complex structures with FIRE/LBFGS algorithms
+- **Protein-Ligand Binding Energy Calculation**: Calculate binding energies using SO3LR force fields
 - **Protein Trimming**: Trim protein structures around ligands to reduce computational cost
+- **Structure Optimization**: Optimize protein, ligand, and complex structures with FIRE/LBFGS algorithms
 - **Energy decomposition analysis (EDA)**: Analysis of each energy term individually
 - **Ligand Explainability**: Generate per-atom energy contributions and 2D molecular heatmaps for ligands
-- **Protein-Ligand Interaction Explainability**: ProLIF-powered interaction fingerprinting with residue-level energy contributions and bond-colored visualizations
-- **Multi-Ligand Screening**: Process multiple ligands from SDF files or directories
+- **Protein Explainability**: ProLIF-powered interaction fingerprinting with residue-level energy contributions and bond-colored visualizations
 
 ### File Format Support
-- **Input**: PDB, XYZ, SDF formats
-- **Multi-molecule files**: Automatic splitting of multi-ligand SDF or XYZ files
-- **Output**: JSON results, XYZ optimized structures, PNG heatmaps
+- **Protein input**: PDB (preferred for optimization and trimming) and XYZ formats
+- **Multi-molecule files**: Automatic splitting of multi-ligand SDF, XYZ or PDB files
+- **Outputs**: JSON results, XYZ optimized structures, PNG heatmaps
 
-### Advanced Features
-- **Silent/Verbose Modes**: Configurable logging levels for production and debugging
-- **Progress Tracking**: Real-time progress bars for multi-ligand processing
-- **Error Handling**: Robust error handling with detailed reporting
-- **Optimization Logging**: Detailed optimization trajectories and convergence data
+### Workflow Tracking
+- **Silent/Verbose Modes**: Adjustable output verbosity for production deployment and development
+- **Comprehensive Error Recovery**: Automatic failure detection and detailed diagnostic reporting
+- **Optimization logging**: Complete trajectory logging and convergence analysis for quality assurance
 
 </details>
 
@@ -291,7 +289,6 @@ python run_so3lr_sf.py \
 
 
 
-
 <details>
 <summary><h2>🤝 Contributing</h2></summary>
 
@@ -310,8 +307,6 @@ We welcome contributions! Please see our CONTRIBUTING.md (ro be written) for det
 </details>
 
 
-<details>
-<summary><h2>📚 Citation</h2></summary>
+📚 Citation
 
-</details>
 
