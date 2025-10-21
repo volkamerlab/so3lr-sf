@@ -115,6 +115,40 @@ results_steps_100_fmax0.05/
 
 </details>
 
+
+<details>
+<summary><h2>📋 Command Line Arguments</h2></summary>
+
+### Required Arguments
+- `--protein`: Path to protein structure file
+- `--ligands`: Path to ligand file, directory, or multi-SDF file
+
+### Workflow Options
+- `--trim`: Trim protein around ligand(s) before calculation
+- `--optimize`: Optimize structures before energy calculation
+- `--explain`: Generate explainability analysis and heatmaps
+- `--protein-explain`: Generate protein explainability with protein-ligand interaction analysis and interacting residue coloring depending on their energy contribution
+
+### Trimming Parameters
+- `--radius FLOAT`: Radius in Angstroms for protein trimming (default: 10.0)
+- `--trim-lig FILE`: Specific ligand file to use for trimming
+
+### Optimization Parameters
+- `--optimizer {FIRE,LBFGS}`: Optimization algorithm (default: FIRE)
+- `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
+- `--steps INT`: Maximum optimization steps (default: 100)
+- `--opt-radius FLOAT`: Optimization radius around ligand
+
+### Model Parameters
+- `--model-path PATH`: Path to SO3LR model parameters (auto-detected if not specified)
+
+### Logging & Output
+- `-v, --verbose`: Enable detailed logging output
+- `--opt-log`: Save optimization details to JSON file
+
+</details>
+
+
 <details>
 <summary><h2>🔧 Quick Start</h2></summary>
 
@@ -158,37 +192,6 @@ print(f"Component contributions: {analysis['component_totals']}")
 
 </details>
 
-<details>
-<summary><h2>📋 Command Line Arguments</h2></summary>
-
-### Required Arguments
-- `--protein`: Path to protein structure file
-- `--ligands`: Path to ligand file, directory, or multi-SDF file
-
-### Workflow Options
-- `--trim`: Trim protein around ligand(s) before calculation
-- `--optimize`: Optimize structures before energy calculation
-- `--explain`: Generate explainability analysis and heatmaps
-- `--protein-explain`: Generate protein explainability with protein-ligand interaction analysis and interacting residue coloring depending on their energy contribution
-
-### Trimming Parameters
-- `--radius FLOAT`: Radius in Angstroms for protein trimming (default: 10.0)
-- `--trim-lig FILE`: Specific ligand file to use for trimming
-
-### Optimization Parameters
-- `--optimizer {FIRE,LBFGS}`: Optimization algorithm (default: FIRE)
-- `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
-- `--steps INT`: Maximum optimization steps (default: 100)
-- `--opt-radius FLOAT`: Optimization radius around ligand
-
-### Model Parameters
-- `--model-path PATH`: Path to SO3LR model parameters (auto-detected if not specified)
-
-### Logging & Output
-- `-v, --verbose`: Enable detailed logging output
-- `--opt-log`: Save optimization details to JSON file
-
-</details>
 
 <details>
 <summary><h2>💡 Examples</h2></summary>
@@ -288,7 +291,6 @@ python run_so3lr_sf.py \
 </details>
 
 
-
 <details>
 <summary><h2>🤝 Contributing</h2></summary>
 
@@ -304,9 +306,11 @@ We welcome contributions! Please see our CONTRIBUTING.md (ro be written) for det
 <details>
 <summary><h2>📄 License</h2></summary>
 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 </details>
 
 
-📚 Citation
+## 📚 Citation
 
 
