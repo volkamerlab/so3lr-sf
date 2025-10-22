@@ -88,8 +88,6 @@ def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, cal
     atomic_numbers = np.concatenate((protein_atoms.get_atomic_numbers(), ligand_atoms.get_atomic_numbers()), axis=None)
     # TODO: Move ligand far away to minimize interactions in a clever way to ensure it is further than cutoff
     positions = np.concatenate((protein_atoms.get_positions(), ligand_atoms.get_positions()+1000), axis=0) # Move ligand far away
-    import ase.io as aio
-    aio.write("debug_non_interacting.xyz", Atoms(symbols=atomic_numbers, positions=positions))
     complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
     non_interaction_energy = calc.calculate_energy(complex_atoms)
     protein_atoms = len(protein_atoms.get_atomic_numbers())
