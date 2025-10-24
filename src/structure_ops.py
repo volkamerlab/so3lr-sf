@@ -32,8 +32,9 @@ def trim_structure(
     - For PDB files: Residue-based trimming (keeps complete residues)
     - For XYZ/SDF files: Atom-based trimming (keeps individual atoms)
 
-    The trimmed structure is saved as an XYZ file and can be used for more efficient
-    calculations on large protein-ligand systems.
+    The trimmed structure is saved in the same format as the input protein (PDB files
+    are saved as PDB, others as XYZ) and can be used for more efficient calculations
+    on large protein-ligand systems.
 
     Args:
         protein_path: Path to protein structure file (PDB, XYZ, SDF)
@@ -42,7 +43,7 @@ def trim_structure(
         output_dir: Directory to save trimmed structures (default: same as protein)
 
     Returns:
-        str: Path to saved trimmed protein XYZ file
+        str: Path to saved trimmed protein file (same format as input)
 
     Raises:
         ValueError: If no protein atoms found within radius or structures are invalid
@@ -81,13 +82,15 @@ def trim_structure(
         logger.info("Complete residues will be included if any atom is within the cutoff radius")
         atoms_to_keep = _trim_by_residues(protein_path, protein_positions, ligand_positions, radius, logger)
         trimming_method = "residue"
-    else:
+    elif protein_ext == '.xyz':
         # Atom-based trimming for non-PDB files
         logger.warning(f"Using atom-based trimming for {protein_ext.upper()} file: {protein_path.name}")
         logger.warning("Individual atoms will be trimmed - residues may be incomplete!")
         logger.warning("For complete residue trimming, use PDB format input files")
         atoms_to_keep = _trim_by_atoms(protein_positions, ligand_positions, radius, logger)
         trimming_method = "atom"
+    else:
+        raise ValueError(f"Unsupported protein file format: {protein_ext}")
 
     if len(atoms_to_keep) == 0:
         raise ValueError(f"No protein atoms found within {radius} Å of ligand")
@@ -96,7 +99,9 @@ def trim_structure(
     trimmed_protein = protein[atoms_to_keep]
 
     # Generate output filename with trimming method indicator
-    trimmed_filename = f"{protein_path.stem}_trimmed_{radius}A_{trimming_method}.xyz"
+    # Preserve original format if input is PDB, otherwise use XYZ
+    output_ext = protein_ext if protein_ext == '.pdb' else '.xyz'
+    trimmed_filename = f"{protein_path.stem}_trimmed_{radius}A_{trimming_method}{output_ext}"
     trimmed_path = output_dir / trimmed_filename
 
     # Save trimmed protein
