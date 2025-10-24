@@ -122,7 +122,7 @@ class TestTrimStructure:
         )
 
         # Check that files were created with residue suffix
-        expected_filename = f"{protein_path.stem}_trimmed_{radius}A_residue.xyz"
+        expected_filename = f"{protein_path.stem}_trimmed_{radius}A_residue.pdb"
         assert Path(trimmed_protein_path).name == expected_filename
         assert Path(trimmed_protein_path).exists()
 
@@ -263,18 +263,13 @@ class TestTrimStructure:
 
     @pytest.mark.unit
     def test_trim_structure_edge_case_sdf_format(self, water_files, temp_dir):
-        """Test trimming with SDF format (should use atom-based)."""
+        """Test trimming with SDF format (should raise error for unsupported format)."""
         protein_path = water_files['sdf']  # Use SDF as "protein"
         ligand_path = water_files['xyz']
 
-        trimmed_protein_path = trim_structure(
-            protein_path, ligand_path, radius=2.0, output_dir=temp_dir
-        )
-
-        # Should use atom-based trimming and have atom suffix
-        expected_filename = f"{protein_path.stem}_trimmed_2.0A_atom.xyz"
-        assert Path(trimmed_protein_path).name == expected_filename
-        assert Path(trimmed_protein_path).exists()
+        # SDF format is not supported for protein input
+        with pytest.raises(ValueError, match="Unsupported protein file format: .sdf"):
+            trim_structure(protein_path, ligand_path, radius=2.0, output_dir=temp_dir)
 
     @pytest.mark.unit
     def test_trim_structure_compare_pdb_vs_xyz_same_molecule(self, alanine_files, water_files, temp_dir):
@@ -297,7 +292,7 @@ class TestTrimStructure:
         xyz_result = load_ase_structure(xyz_trimmed)[0]
 
         # For small molecules like alanine, results might be the same, but filenames should differ
-        assert Path(pdb_trimmed).name.endswith("_residue.xyz")
+        assert Path(pdb_trimmed).name.endswith("_residue.pdb")
         assert Path(xyz_trimmed).name.endswith("_atom.xyz")
 
         # Both should have valid structures
