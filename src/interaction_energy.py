@@ -69,7 +69,7 @@ def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, P
 def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, calc: So3lrSfCalculator,
                                 explainability: bool = False, logger=None) -> Tuple[float, float, Optional[Dict], Optional[Dict]]:
     """
-    Calculate energies for protein and ligand separately.
+    Calculate energies for protein and ligand non interacting.
 
     Args:
         protein_atoms: Protein structure
@@ -79,31 +79,29 @@ def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, cal
         logger: Logger instance
 
     Returns:
-        Tuple of (protein_energy, ligand_energy, protein_components, ligand_components)
+        Tuple of (non_interaction_energy, protein_components, ligand_components)
     """
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    logger.info("Calculating protein energy...")
-    logger.debug(f"Protein atoms shape: positions={protein_atoms.get_positions().shape}, atomic_numbers={len(protein_atoms.get_atomic_numbers())}")
-    protein_energy = calc.calculate_energy(protein_atoms)
-    logger.debug(f"Protein energy: {protein_energy:.6f} eV")
+    logger.info("Calculating non-interacting energy...")
+    atomic_numbers = np.concatenate((protein_atoms.get_atomic_numbers(), ligand_atoms.get_atomic_numbers()), axis=None)
+    # TODO: Move ligand far away to minimize interactions in a clever way to ensure it is further than cutoff
+    positions = np.concatenate((protein_atoms.get_positions(), ligand_atoms.get_positions()+1000), axis=0) # Move ligand far away
+    complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
+    non_interaction_energy = calc.calculate_energy(complex_atoms)
+    protein_atoms = len(protein_atoms.get_atomic_numbers())
 
     protein_components = None
-    if explainability:
-        protein_components = calc.get_per_atom_energy_components()
-        logger.debug("Protein per-atom components extracted")
-
-    logger.info("Calculating ligand energy...")
-    ligand_energy = calc.calculate_energy(ligand_atoms)
-    logger.debug(f"Ligand energy: {ligand_energy:.6f} eV")
-
     ligand_components = None
     if explainability:
-        ligand_components = calc.get_per_atom_energy_components()
+        non_iter_energy_components = calc.get_per_atom_energy_components()
+        protein_components = {k: v[:protein_atoms] for k, v in non_iter_energy_components.items()}
+        logger.debug("Protein per-atom components extracted")
+        ligand_components = {k: v[protein_atoms:] for k, v in non_iter_energy_components.items()}
         logger.debug("Ligand per-atom components extracted")
 
-    return protein_energy, ligand_energy, protein_components, ligand_components
+    return non_interaction_energy, protein_components, ligand_components
 
 
 def calculate_complex_energy(complex_atoms: Atoms, calc: So3lrSfCalculator,
@@ -135,7 +133,7 @@ def calculate_complex_energy(complex_atoms: Atoms, calc: So3lrSfCalculator,
     return complex_energy, complex_components
 
 
-def compute_interaction_energy(complex_energy: float, protein_energy: float, ligand_energy: float,
+def compute_interaction_energy(complex_energy: float, non_iter_energy: float,
                              logger=None) -> float:
     """
     Calculate interaction energy: complex - protein - ligand.
@@ -152,7 +150,7 @@ def compute_interaction_energy(complex_energy: float, protein_energy: float, lig
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    interaction_energy = complex_energy - protein_energy - ligand_energy
+    interaction_energy = complex_energy - non_iter_energy
     logger.info(f"Interaction energy calculated: {interaction_energy:.6f} eV")
     logger.info(f"Binding energy: {interaction_energy * 23.06:.1f} kcal/mol")
 
@@ -365,7 +363,7 @@ def protein_ligand_interaction(
     )
 
     # Step 2: Calculate individual energies
-    protein_energy, ligand_energy, protein_components, ligand_components = calculate_individual_energies(
+    non_interaction_energy, protein_components, ligand_components = calculate_individual_energies(
         protein_atoms, ligand_atoms, calc, explainability or eda, logger
     )
 
@@ -376,7 +374,7 @@ def protein_ligand_interaction(
 
     # Step 4: Compute interaction energy
     interaction_energy = compute_interaction_energy(
-        complex_energy, protein_energy, ligand_energy, logger
+        complex_energy, non_interaction_energy, logger
     )
 
     if not explainability and not eda:
