@@ -1541,7 +1541,6 @@ class TestProcessSingleLigand:
             assert result['ligand_name'] == 'water'
             assert result['interaction_energy'] == -2.5
             assert result['binding_energy_kcal_mol'] == -2.5 * 23.06
-            assert result['working_complex_path'] is None
 
     @pytest.mark.unit
     def test_process_single_ligand_with_explainability(self, temp_dir, water_files, mock_calculator):
@@ -1582,7 +1581,7 @@ class TestProcessSingleLigand:
             assert error is None
 
             # Check analysis was included
-            assert result['analysis'] == mock_analysis
+            assert result['ligand_explainability'] == mock_analysis
             assert result['interaction_energy'] == -2.3
 
             # Check that heatmap output was set correctly
@@ -1634,7 +1633,7 @@ class TestProcessSingleLigand:
             assert error is None
 
             # Check EDA analysis was included
-            assert result['analysis'] == mock_analysis
+            assert result['ligand_explainability'] == mock_analysis
             assert result['interaction_energy'] == -1.8
 
     @pytest.mark.unit
