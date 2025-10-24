@@ -416,7 +416,14 @@ def optimize_structure(
     # Set output directory
     if output_path.is_file():
         # return the path if it's already a file
-        return str(output_path), {'output_file': output_path, 'existing_file': True}
+        return str(output_path), {
+            'output_file': output_path,
+            'existing_file': True,
+            'constraint_info': {
+                'constraint_applied': False,
+                'constraint_type': None
+            }
+        }
 
     initial_positions = atoms.positions.copy()
 
@@ -731,12 +738,9 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
         result = {
             'ligand_name': ligand_name,
             'ligand_file': ligand_file,
-            'working_protein_path': working_protein_path,
-            'working_ligand_path': working_ligand_path,
-            'working_complex_path': working_complex_path,
             'interaction_energy': interaction_energy,
             'binding_energy_kcal_mol': interaction_energy * 23.06,
-            'analysis': analysis
+            'ligand_explainability': analysis
         }
 
         logger.info(f"  Interaction energy: {interaction_energy:.6f} eV "

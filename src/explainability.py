@@ -406,7 +406,6 @@ def generate_energy_heatmap(
     if preloaded_protein_prolif is not None:
         atom_mappings = _fp_interaction_mapping(preloaded_protein_prolif, mol)
         residue_atom_mapping = preloaded_protein_prolif[1]  # Get residue mapping
-        output_path = Path(output_path).with_stem(output_path.stem + "_ifp") if output_path else None
         # Use the protein interaction heatmap with proper bond coloring and interaction legends
         return generate_protein_interaction_heatmap(
             ligand_path=ligand_path,

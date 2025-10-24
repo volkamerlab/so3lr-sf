@@ -23,7 +23,6 @@ from pathlib import Path
 from tqdm import tqdm
 
 from src.calculator import So3lrSfCalculator
-from src.interaction_energy import protein_ligand_interaction
 from src.utils import setup_logging
 from src.structure_ops import perform_trimming, optimize_protein, process_single_ligand
 from src.utils import setup_output_directory, save_results, get_ligand_files
@@ -37,19 +36,19 @@ def setup_argument_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Basic calculation
-  python run_so3lr_sf.py protein.pdb ligand.sdf
+  python so3lr_sf.py protein.pdb ligand.sdf
 
   # Trim protein around ligand (5Å radius)
-  python run_so3lr_sf.py protein.pdb ligand.sdf --trim --radius 5.0
+  python so3lr_sf.py protein.pdb ligand.sdf --trim --radius 5.0
 
   # Optimize structures before calculation
-  python run_so3lr_sf.py protein.pdb ligand.sdf --optimize
+  python so3lr_sf.py protein.pdb ligand.sdf --optimize
 
   # Full workflow with explainability
-  python run_so3lr_sf.py protein.pdb ligands.sdf --trim --optimize --explain -o results/
+  python so3lr_sf.py protein.pdb ligands.sdf --trim --optimize --explain
 
   # Process ligand directory
-  python run_so3lr_sf.py protein.pdb ligands_dir/ --optimize --explain -o results/
+  python so3lr_sf.py protein.pdb ligands.sdf --optimize --explain
         """
     )
 

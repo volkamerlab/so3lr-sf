@@ -113,6 +113,7 @@ class So3lrSfCalculator:
                     from_file=False,
                     calculate_stress=False,  # We don't need stress calculations
                     dtype=self.dtype,
+                    add_energy_shift=False,
                     output_per_atom_energy_components=self.output_per_atom_energy_components
                 )
             finally:

@@ -1,7 +1,7 @@
 # **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![codecov](https://codecov.io/gh/volkamerlab/so3lr-sf/branch/main/graph/badge.svg)](https://codecov.io/gh/volkamerlab/so3lr-sf)
+[![codecov](https://codecov.io/gh/volkamerlab/so3lr-sf/graph/badge.svg?token=A0X4RNCKBI)](https://codecov.io/gh/volkamerlab/so3lr-sf)
 [![CI](https://github.com/volkamerlab/so3lr-sf/workflows/CI/badge.svg)](https://github.com/volkamerlab/so3lr-sf/actions)
 
 SO3LR-SF is a comprehensive Python package for calculating protein-ligand interaction energies using SO3LR machine learning force fields. It provides advanced features including structure optimization, explainability analysis, and molecular visualization.
@@ -156,13 +156,13 @@ results_steps_100_fmax0.05/
 
 ```bash
 # Simple protein-ligand interaction calculation
-python run_so3lr_sf.py --protein protein.pdb --ligands ligand.sdf
+python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf
 
 # With structure optimization
-python run_so3lr_sf.py --protein protein.pdb --ligands ligand.sdf --optimize
+python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf --optimize
 
 # Full workflow with explainability
-python run_so3lr_sf.py --protein protein.pdb --ligands ligands.sdf \
+python so3lr_sf.py --protein protein.pdb --ligands ligands.sdf \
     --trim --optimize --explain --verbose
 ```
 
@@ -198,14 +198,14 @@ print(f"Component contributions: {analysis['component_totals']}")
 
 ### Example 1: Basic Calculation
 ```bash
-python run_so3lr_sf.py \
+python so3lr_sf.py \
     --protein tests/test_data/alanine.xyz \
     --ligands tests/test_data/water.sdf
 ```
 
 ### Example 2: Multi-Ligand Screening + Trim the protein
 ```bash
-python run_so3lr_sf.py \
+python so3lr_sf.py \
     --protein target.pdb \
     --ligands ligand_library.sdf \
     --trim \
@@ -216,7 +216,7 @@ python run_so3lr_sf.py \
 
 ### Example 3: Optimized Workflow
 ```bash
-python run_so3lr_sf.py \
+python so3lr_sf.py \
     --protein protein.pdb \
     --ligands ligands.sdf \
     --optimize \
@@ -229,7 +229,7 @@ python run_so3lr_sf.py \
 
 ### Example 4: Full Analysis Pipeline
 ```bash
-python run_so3lr_sf.py \
+python so3lr_sf.py \
     --protein protein.pdb \
     --ligands multi_ligands.sdf \
     --trim \
@@ -243,7 +243,7 @@ python run_so3lr_sf.py \
 
 ### Example 5: Protein-Ligand Interaction Analysis
 ```bash
-python run_so3lr_sf.py \
+python so3lr_sf.py \
     --protein protein.pdb \
     --ligands ligand.sdf \
     --protein-explain \
@@ -294,7 +294,7 @@ python run_so3lr_sf.py \
 <details>
 <summary><h2>🤝 Contributing</h2></summary>
 
-We welcome contributions! Please see our CONTRIBUTING.md (ro be written) for details on:
+We welcome contributions! Please see our CONTRIBUTING.md (to be written) for details on:
 - Code style and formatting
 - Testing requirements
 - Documentation standards
