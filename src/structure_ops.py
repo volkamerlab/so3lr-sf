@@ -647,7 +647,7 @@ def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_
     return optimized_path
 
 
-def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger, preloaded_protein_prolif=None):
+def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger, preloaded_protein_prolif=None, enable_3d_explain=False):
     """Process a single ligand through the workflow."""
 
     ligand_path = Path(ligand_file)
@@ -721,7 +721,7 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
             heatmap_output = output_dir / "ligand_exp" / f"{ligand_name}_heatmap.png"
 
         # Determine explainability mode
-        explainability_mode = args.explain or args.protein_explain
+        explainability_mode = args.explain or args.protein_explain or enable_3d_explain
 
         result_from_calc = protein_ligand_interaction(
             working_protein_path, working_ligand_path, calc,
@@ -730,7 +730,8 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
             eda=args.eda,
             heatmap_output=heatmap_output,
             verbose=False,
-            preloaded_protein_prolif=preloaded_protein_prolif  # Enhanced mode if not None
+            preloaded_protein_prolif=preloaded_protein_prolif,
+            enable_3d_explain=enable_3d_explain
         )
 
         # Handle results
