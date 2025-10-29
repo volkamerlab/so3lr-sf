@@ -32,7 +32,7 @@ def _create_3d_energy_visualization(
     ligand_path: Union[str, Path],
     protein_energy_differences: Dict[str, np.ndarray],
     ligand_energy_differences: Dict[str, np.ndarray],
-    output_dir: Optional[Union[str, Path]] = None
+    output_path: Optional[Union[str, Path]] = None
 ) -> Optional[str]:
     """
     Create 3D PyMOL visualization for protein-ligand complex with energy mapping.
@@ -42,17 +42,13 @@ def _create_3d_energy_visualization(
         ligand_path: Path to ligand structure file
         protein_energy_differences: Per-atom energy differences for protein
         ligand_energy_differences: Per-atom energy differences for ligand
-        output_dir: Optional output directory (defaults to ligand_path parent / "pl_3d_exp")
+        output_path: Optional output path for PyMOL script file
 
     Returns:
         Path to PyMOL script file if successful, None if failed
     """
     try:
         ligand_path = Path(ligand_path)
-        if output_dir is None:
-            output_dir = ligand_path.parent / "pl_3d_exp"
-        else:
-            output_dir = Path(output_dir)
 
         ligand_name = ligand_path.stem
         logger.info("Creating 3D PyMOL visualization with mapped weights...")
@@ -78,9 +74,15 @@ def _create_3d_energy_visualization(
 
         logger.debug(f"Complex energy components: {list(complex_energy_differences.keys())}")
 
+        # Set default output path if None provided
+        if output_path is None:
+            output_path = ligand_path.parent / "pl_3d_exp" / f"{ligand_name}_3d_visualization.pml"
+        else:
+            output_path = Path(output_path)
+
         # Create temporary complex structure file
-        temp_complex_path = output_dir / f"temp_complex_{ligand_name}.pdb"
-        output_dir.mkdir(parents=True, exist_ok=True)
+        temp_complex_path = output_path.parent / f"temp_complex_{ligand_name}.pdb"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Load ligand and combine with protein
         ligand_atoms = read(str(ligand_path))
@@ -91,7 +93,7 @@ def _create_3d_energy_visualization(
         viz_file = create_pymol_session(
             protein_path=temp_complex_path,
             protein_energy_differences=complex_energy_differences,
-            output_dir=output_dir,
+            output_path=output_path,
             session_name=f"complex_{ligand_name}_energy"
         )
 
@@ -305,6 +307,9 @@ def generate_ligand_heatmap(
         ax.imshow(img)
         ax.axis("off")
 
+        # Add component title
+        ax.set_title(component, fontsize=14, fontweight='bold', pad=20)
+
         # Add colorbar
         create_colorbar(fig, ax, global_max, component, weights)
 
@@ -418,6 +423,10 @@ def generate_protein_interaction_heatmap(
 
         ax.imshow(ligand_heatmap_img)
         ax.axis("off")
+
+        # Add component title
+        ax.set_title(component, fontsize=14, fontweight='bold', pad=20)
+
         # Use extended_weights which includes both ligand and protein residue contributions
         create_colorbar(fig, ax, global_max, component, np.array(extended_weights))
 
@@ -449,7 +458,6 @@ def generate_protein_interaction_heatmap(
 
     # Save figure if requested
     if output_path:
-        output_path = Path(output_path).with_stem(output_path.stem + "_ifp")
         fig.savefig(str(output_path), dpi=300, bbox_inches='tight')
         logger.info(f"Protein interaction heatmap saved to: {output_path}")
 
@@ -459,7 +467,7 @@ def generate_protein_interaction_heatmap(
 def generate_energy_heatmap(
     ligand_path: Union[str, Path],
     ligand_energy_differences: Dict[str, np.ndarray],
-    output_path: Optional[Union[str, Path]] = None,
+    output_paths: Tuple[Optional[Union[str, Path]], Optional[Union[str, Path]], Optional[Union[str, Path]]] = None,
     title: Optional[str] = None,
     protein_energy_differences: Optional[Dict[str, np.ndarray]] = None,
     preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None,
@@ -485,16 +493,15 @@ def generate_energy_heatmap(
     logger.info(f"Generating heatmap for ligand: {ligand_path}")
     # Read ligand molecule for visualization using universal function
     mol = load_molecule_to_prolif(ligand_path)
-
     # Use enhanced visualizer if protein data is provided (protein mode)
     # Create 3D PyMOL visualization if requested
-
     if protein_atoms is not None and protein_energy_differences is not None:
         _create_3d_energy_visualization(
             protein_atoms=protein_atoms,
             ligand_path=ligand_path,
             protein_energy_differences=protein_energy_differences,
-            ligand_energy_differences=ligand_energy_differences
+            ligand_energy_differences=ligand_energy_differences,
+            output_path=output_paths[-1]
         )
 
     if preloaded_protein_prolif is not None:         
@@ -507,17 +514,16 @@ def generate_energy_heatmap(
             atom_mappings=atom_mappings,
             protein_energy_differences=protein_energy_differences,
             residue_atom_mapping=residue_atom_mapping,
-            output_path=output_path,
+            output_path=output_paths[1],
             title=title,
             total_interaction_energy=total_interaction_energy,
         )
-
     else:
         # Use basic ligand heatmap for non-protein mode
         return generate_ligand_heatmap(
             ligand_path=ligand_path,
             ligand_energy_differences=ligand_energy_differences,
-            output_path=output_path,
+            output_path=output_paths[0],
             title=title,
             total_interaction_energy=total_interaction_energy
         )

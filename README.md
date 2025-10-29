@@ -16,6 +16,7 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 - **Energy decomposition analysis (EDA)**: Analysis of each energy term individually
 - **Ligand Explainability**: Generate per-atom energy contributions and 2D molecular heatmaps for ligands
 - **Protein Explainability**: ProLIF-powered interaction fingerprinting with residue-level energy contributions and bond-colored visualizations
+- **3D Energy Visualization**: PyMOL-based 3D visualization of protein energy components with side-by-side comparison and energy-based coloring
 
 ### File Format Support
 - **Protein input**: PDB (preferred for optimization and trimming) and XYZ formats
@@ -126,8 +127,9 @@ results_steps_100_fmax0.05/
 ### Workflow Options
 - `--trim`: Trim protein around ligand(s) before calculation
 - `--optimize`: Optimize structures before energy calculation
-- `--explain`: Generate explainability analysis and heatmaps
-- `--protein-explain`: Generate protein explainability with protein-ligand interaction analysis and interacting residue coloring depending on their energy contribution
+- `--exp-lig`: Generate explainability analysis and heatmaps
+- `--exp-prot`: Generate protein explainability with protein-ligand interaction analysis and interacting residue coloring depending on their energy contribution
+- `--exp-3d`: Generate 3D PyMOL visualization of protein energy components
 
 ### Trimming Parameters
 - `--radius FLOAT`: Radius in Angstroms for protein trimming (default: 10.0)
@@ -163,7 +165,7 @@ python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf --optimize
 
 # Full workflow with explainability
 python so3lr_sf.py --protein protein.pdb --ligands ligands.sdf \
-    --trim --optimize --explain --verbose
+    --trim --optimize --exp-lig --verbose
 ```
 
 ### Python API
@@ -236,7 +238,7 @@ python so3lr_sf.py \
     --radius 8.0 \
     --optimize \
     --opt-radius 4.0 \
-    --explain \
+    --exp-lig \
     --opt-log \
     --verbose
 ```
@@ -246,7 +248,7 @@ python so3lr_sf.py \
 python so3lr_sf.py \
     --protein protein.pdb \
     --ligands ligand.sdf \
-    --protein-explain \
+    --exp-prot \
     --verbose
 ```
 
@@ -259,29 +261,37 @@ python so3lr_sf.py \
 ```json
 {
   "workflow_parameters": {
-    "protein": "protein.pdb",
-    "ligands_source": "ligands.sdf",
-    "trim": true,
-    "optimize": true,
-    "explain": true
+    "protein": "proteins/protein_path.pdb",
+    "ligands_source": "ligands/ligands13.xyz",
+    "trim": false,
+    "trim_radius": null,
+    "optimize": false,
+    "ligand explain 2D": false,
+    "PL interactions explain 2D": false,
+    "PL interactions explain 3D": true,
+    "optimizer": null,
+    "fmax": null,
+    "steps": null
   },
   "summary": {
-    "total_ligands": 10,
-    "successful": 9,
-    "failed": 1
+    "total_ligands": 1,
+    "successful": 1,
+    "failed": 0
   },
   "results": [
     {
       "ligand_name": "ligand_001",
-      "interaction_energy": -0.308,
-      "binding_energy_kcal_mol": -7.11,
+      "interaction_energy": -3.50469970703125,
+      "binding_energy_kcal_mol": -80.81837524414063,
       "analysis": {
         "component_totals": {
-          "MLFF": -0.489,
-          "Electrostatics": 0.283,
-          "Dispersion": -0.014
+          "MLFF": -0.6717734336853027,
+          "ZBL": 0.00029272645645050943,
+          "Electrostatics": -0.13371722865849733,
+          "Dispersion": -0.9648199365474284,
+          "Total": -1.770017891190946
         },
-        "heatmap_path": "ligand_exp/ligand_001_heatmap.png"
+        "ligand_explainability_heatmap": "ligand_exp/ligand_001_heatmap.png"
       }
     }
   ]

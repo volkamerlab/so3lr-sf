@@ -516,7 +516,7 @@ class TestSetupOutputDirectory:
 
         result = setup_output_directory(
             protein_path,
-            explain=True
+            exp_lig=True
         )
 
         expected_dir = temp_dir / "results"
@@ -537,7 +537,7 @@ class TestSetupOutputDirectory:
             protein_path,
             optimize=True,
             trim=True,
-            explain=True,
+            exp_lig=True,
             steps=500,
             fmax=0.05,
             radius=3.0
@@ -594,7 +594,9 @@ class TestSaveResults:
         mock_args.ligands = "test_ligands"
         mock_args.trim = False
         mock_args.optimize = False
-        mock_args.explain = False
+        mock_args.exp_lig = False
+        mock_args.exp_prot = False
+        mock_args.exp_3d = False
         mock_args.opt_log = False
 
         mock_logger = Mock()
@@ -634,7 +636,9 @@ class TestSaveResults:
         mock_args.ligands = "test_ligands"
         mock_args.trim = False
         mock_args.optimize = True
-        mock_args.explain = False
+        mock_args.exp_lig = False
+        mock_args.exp_prot = False
+        mock_args.exp_3d = False
         mock_args.opt_log = True
         mock_args.optimizer = "FIRE"
         mock_args.fmax = 0.01
@@ -682,9 +686,9 @@ class TestSetupLogging:
 
         setup_logging(verbose=True)
 
-        # Check that our application loggers are set to DEBUG
+        # Check that our application loggers are set to INFO (verbose mode)
         src_logger = logging.getLogger('src')
-        assert src_logger.level == logging.DEBUG
+        assert src_logger.level == logging.INFO
 
         # Check that external loggers are suppressed
         jax_logger = logging.getLogger('jax')

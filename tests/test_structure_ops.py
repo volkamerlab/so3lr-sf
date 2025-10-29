@@ -1508,8 +1508,9 @@ class TestProcessSingleLigand:
         # Create mock args
         mock_args = Mock()
         mock_args.optimize = False
-        mock_args.explain = False
-        mock_args.protein_explain = False
+        mock_args.exp_lig = False
+        mock_args.exp_prot = False
+        mock_args.exp_3d = False
         mock_args.eda = False
         mock_args.opt_log = False
 
@@ -1546,14 +1547,15 @@ class TestProcessSingleLigand:
         # Create mock args
         mock_args = Mock()
         mock_args.optimize = False
-        mock_args.explain = True
+        mock_args.exp_lig = True
         mock_args.eda = False
         mock_args.opt_log = False
-        mock_args.protein_explain = False
+        mock_args.exp_prot = True
+        mock_args.exp_3d = True
         
         mock_logger = Mock()
         optimization_log = []
-
+        mock_preloaded_protein_prolif = Mock()
         with patch('src.structure_ops.protein_ligand_interaction') as mock_interaction:
             # Mock explainability return
             mock_analysis = {
@@ -1571,7 +1573,7 @@ class TestProcessSingleLigand:
                 optimization_log=optimization_log,
                 logger=mock_logger
             )
-
+            print("Result:", result)
             # Check no error
             assert error is None
 
@@ -1579,16 +1581,19 @@ class TestProcessSingleLigand:
             assert result['ligand_explainability'] == mock_analysis
             assert result['interaction_energy'] == -2.3
 
-            # Check that heatmap output was set correctly
-            expected_heatmap = temp_dir / "ligand_exp" / "water_heatmap.png"
+            # Check that exp_outputs was set correctly
+            expected_exp_outputs = (
+                temp_dir / "ligand_exp" / "water_heatmap.png",  # exp_lig output
+                temp_dir / "pl_2d_exp" / "water_protein_interactions.png",  # exp_prot output
+                temp_dir / "pl_3d_exp" / "water_3d_visualization.pml"  # exp_3d output
+            )
             mock_interaction.assert_called_with(
                 water_files['pdb'], water_files['sdf'], mock_calculator,
                 complex_path=None,
-                explainability=True,
                 eda=False,
-                heatmap_output=expected_heatmap,
                 verbose=False,
-                preloaded_protein_prolif=None
+                preloaded_protein_prolif=None,
+                exp_outputs=expected_exp_outputs
             )
 
     @pytest.mark.unit
@@ -1600,7 +1605,7 @@ class TestProcessSingleLigand:
         # Create mock args
         mock_args = Mock()
         mock_args.optimize = False
-        mock_args.explain = False
+        mock_args.exp_lig = False
         mock_args.eda = True
         mock_args.opt_log = False
 
@@ -1640,7 +1645,7 @@ class TestProcessSingleLigand:
         # Create mock args
         mock_args = Mock()
         mock_args.optimize = False
-        mock_args.explain = False
+        mock_args.exp_lig = False
         mock_args.eda = False
         mock_args.opt_log = False
 
@@ -1713,7 +1718,7 @@ class TestProcessSingleLigandIntegration:
         # Create args with everything enabled but fast settings
         mock_args = Mock()
         mock_args.optimize = True
-        mock_args.explain = True
+        mock_args.exp_lig = True
         mock_args.eda = True
         mock_args.opt_log = True
         mock_args.optimizer = "FIRE"

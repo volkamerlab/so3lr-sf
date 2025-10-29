@@ -236,9 +236,28 @@ def write_opt_structure(
     return write_structure(atoms, file_path)
 
 
-def setup_output_directory(protein_path, optimize=False, trim=False, explain=False,
-                          steps=None, fmax=None, radius=None):
-    """Setup and create output directory based on workflow parameters."""
+def setup_output_directory(protein_path: Union[str, Path], optimize: bool = False, trim: bool = False,
+                          exp_lig: bool = False, exp_prot: bool = False, exp_3d: bool = False,
+                          steps: Optional[int] = None, fmax: Optional[float] = None, radius: Optional[float] = None) -> Path:
+    """Setup and create output directory based on workflow parameters.
+
+    Args:
+        protein_path: Path to protein structure file
+        optimize: Whether structure optimization will be performed
+        trim: Whether protein trimming will be performed
+        exp_lig: Generate ligand explainability analysis and heatmaps
+        exp_prot: Generate protein explainability with interaction analysis
+        exp_3d: Generate 3D PyMOL visualization of protein energy components
+        steps: Optimization steps (for directory naming)
+        fmax: Force maximum for optimization (for directory naming)
+        radius: Trimming radius (for directory naming)
+
+    Returns:
+        Path: Created output directory path
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
     output_name = "results"
     if optimize:
         output_name += f"_steps_{steps}_fmax{fmax}"
@@ -246,14 +265,24 @@ def setup_output_directory(protein_path, optimize=False, trim=False, explain=Fal
         output_name += f"_trim_{radius}A"
 
     output_dir = Path(protein_path).parent / output_name
+    logger.debug(f"Creating output directory: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create subdirectories
     if optimize:
         (output_dir / "opt_ligand").mkdir(parents=True, exist_ok=True)
         (output_dir / "opt_complexes").mkdir(parents=True, exist_ok=True)
-    if explain:
+
+    # Create explain subdirectories based on specific modes
+    if exp_lig:
+        logger.debug(f"Creating ligand explainability subdirectory: {exp_lig}")
         (output_dir / "ligand_exp").mkdir(parents=True, exist_ok=True)
+    if exp_prot:
+        logger.debug(f"Creating protein explainability subdirectory: {exp_prot}")
+        (output_dir / "protein_exp").mkdir(parents=True, exist_ok=True)
+    if exp_3d:
+        logger.debug(f"Creating 3D explainability subdirectory: {exp_3d}")
+        (output_dir / "3d_exp").mkdir(parents=True, exist_ok=True)
 
     return output_dir
 
@@ -277,7 +306,9 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
                     'trim': args.trim,
                     'trim_radius': args.radius if args.trim else None,
                     'optimize': args.optimize,
-                    'explain': args.explain,
+                    'ligand explain 2D': args.exp_lig,
+                    'PL interactions explain 2D': args.exp_prot,
+                    'PL interactions explain 3D': args.exp_3d,
                     'optimizer': args.optimizer if args.optimize else None,
                     'fmax': args.fmax if args.optimize else None,
                     'steps': args.steps if args.optimize else None
@@ -317,12 +348,13 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
         logger.info(f"Optimization log saved: {opt_log_file}")
 
 
-def setup_logging(verbose: bool = False):
+def setup_logging(verbose: bool = False, debug: bool = False):
     """
     Setup logging configuration.
 
     Args:
-        verbose: If True, set logging level to DEBUG for our modules, otherwise INFO
+        verbose: If True, set logging level to INFO for our modules
+        debug: If True, set logging level to DEBUG for our modules (overrides verbose)
     """
     # Clear any existing handlers to avoid conflicts
     for handler in logging.root.handlers[:]:
@@ -336,15 +368,16 @@ def setup_logging(verbose: bool = False):
         force=True
     )
 
-    # Set our application loggers to DEBUG if verbose is requested
-    if verbose:
+    # Set our application loggers based on debug/verbose flags
+    if debug or verbose:
         our_loggers = [
             logging.getLogger('src'),
             logging.getLogger('__main__'),
             logging.getLogger('run_so3lr_sf')
         ]
+        log_level = logging.DEBUG if debug else logging.INFO
         for logger in our_loggers:
-            logger.setLevel(logging.DEBUG)
+            logger.setLevel(log_level)
 
     # Suppress verbose external libraries
     external_loggers = [

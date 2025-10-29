@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 def create_pymol_session(protein_path: Union[str, Path],
                         protein_energy_differences: Dict[str, List[float]],
-                        output_dir: Union[str, Path],
+                        output_path: Union[str, Path],
                         session_name: str = "protein_energy_visualization") -> str:
     """
     Create a PyMOL session file for protein-ligand complex energy visualization.
@@ -49,7 +49,7 @@ def create_pymol_session(protein_path: Union[str, Path],
         protein_energy_differences: Dict with energy component names as keys
                                    and per-atom energy differences as values
                                    Components: MLFF, ZBL, Electrostatics, Dispersion, Total
-        output_dir: Directory to save PyMOL session and script files
+        output_path: Path to save PyMOL session and script files
         session_name: Base name for output files (default: "protein_energy_visualization")
 
     Returns:
@@ -67,13 +67,11 @@ def create_pymol_session(protein_path: Union[str, Path],
         ...     'Total': [0.05, -0.1, 0.05, ...]
         ... }
         >>> script_path = create_pymol_session(
-        ...     'complex.pdb', energy_diffs, 'output_dir', 'my_complex'
+        ...     'complex.pdb', energy_diffs, 'output_path', 'my_complex'
         ... )
         >>> print(f"Run: pymol {script_path}")
     """
     protein_path = Path(protein_path)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Validate input files
     if not protein_path.exists():
@@ -86,31 +84,21 @@ def create_pymol_session(protein_path: Union[str, Path],
     except Exception as e:
         raise ValueError(f"Failed to load protein structure: {e}")
 
-    # Validate energy data
-    if not protein_energy_differences:
-        raise ValueError("No energy differences provided")
-
-    # Expected energy components (in display order)
-    expected_components = ['MLFF', 'ZBL', 'Electrostatics', 'Dispersion', 'Total']
-    available_components = [comp for comp in expected_components
-                           if comp in protein_energy_differences]
-
-    if not available_components:
-        raise ValueError(f"No recognized energy components found. "
-                        f"Expected: {expected_components}")
-
     # Validate that all components have correct number of values
-    for comp in available_components:
-        values = protein_energy_differences[comp]
+    for comp, values in protein_energy_differences.items():
         if len(values) != n_atoms:
             raise ValueError(f"Energy component '{comp}' has {len(values)} values "
                            f"but protein has {n_atoms} atoms")
 
     logger.info(f"Creating PyMOL visualization for {n_atoms} atoms with "
-                f"{len(available_components)} energy components")
+                f"{len(protein_energy_differences.keys())} energy components")
+
+    # Calculate center of mass of the structure
+    center_of_mass = np.mean(protein_atoms.get_positions(), axis=0)
+    logger.debug(f"Structure center of mass: {center_of_mass}")
 
     # Convert protein to PDB format if needed for PyMOL
-    protein_pdb_path = output_dir / f"{session_name}_protein.pdb"
+    protein_pdb_path = output_path.parent / f"{session_name}_protein.pdb"
     if protein_path.suffix.lower() != '.pdb':
         # Convert to PDB format
         try:
@@ -125,14 +113,11 @@ def create_pymol_session(protein_path: Union[str, Path],
         import shutil
         shutil.copy2(protein_path, protein_pdb_path)
 
-    # Generate PyMOL script
-    script_path = output_dir / f"{session_name}.pml"
-
-    with open(script_path, 'w') as f:
+    with open(output_path, 'w') as f:
         # Header
         f.write(f"# PyMOL Protein Energy Visualization\n")
         f.write(f"# Generated from: {protein_path}\n")
-        f.write(f"# Components: {', '.join(available_components)}\n\n")
+        f.write(f"# Components: {', '.join(protein_energy_differences.keys())}\n\n")
 
         # Load and setup
         f.write("# Clear workspace\n")
@@ -140,7 +125,7 @@ def create_pymol_session(protein_path: Union[str, Path],
         f.write("bg_color white\n\n")
 
         # Load protein structure for each component
-        for i, component in enumerate(available_components):
+        for i, component in enumerate(protein_energy_differences.keys()):
             structure_name = f"protein_{component.lower()}"
 
             f.write(f"# Load structure for {component} component\n")
@@ -164,10 +149,20 @@ def create_pymol_session(protein_path: Union[str, Path],
 
             # Note: Sticks for contributing atoms will be set after energy analysis
 
-            # Add label
-            f.write(f"label {structure_name} and name CA and resi 1, '{component}'\n")
-            f.write(f"set label_size, 20\n")
-            f.write(f"set label_color, black\n\n")
+            # Calculate title position above the center of this translated structure
+            title_x = center_of_mass[0] + x_offset  # Center X + translation offset
+            title_y = center_of_mass[1]             # Center Y (no Y translation)
+            title_z = center_of_mass[2] + 50        # Center Z + height offset
+
+            # Add energy component title using a pseudoatom positioned at structure center
+            f.write(f"# Add floating title for {component} energy component at structure center\n")
+            f.write(f"pseudoatom title_{structure_name}, pos=[{title_x:.3f}, {title_y:.3f}, {title_z:.3f}]\n")
+            f.write(f"label title_{structure_name}, '{component}'\n")
+            f.write(f"set label_size, 15, title_{structure_name}\n")
+            f.write(f"set label_color, black, title_{structure_name}\n")
+            f.write(f"show spheres, title_{structure_name}\n")
+            f.write(f"set sphere_scale, 0.2, title_{structure_name}\n")
+            f.write(f"color blue, title_{structure_name}\n")
 
             # Get energy values for this component
             energy_values = protein_energy_differences[component]
@@ -281,10 +276,10 @@ def create_pymol_session(protein_path: Union[str, Path],
         f.write("# Red = High energy values (normalized 1)\n")
 
         # Save session
-        session_file = output_dir / f"{session_name}.pse"
+        session_file = output_path.with_suffix(".pse")
         f.write(f"\n# Save session\n")
         f.write(f"save {session_file.name}\n")
 
-    logger.info(f"PyMOL script generated. To visualize: pymol {script_path}")
+    logger.info(f"PyMOL script generated. To visualize: pymol {output_path}")
 
-    return str(script_path)
+    return str(output_path)

@@ -647,8 +647,22 @@ def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_
     return optimized_path
 
 
-def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger, preloaded_protein_prolif=None, enable_3d_explain=False):
-    """Process a single ligand through the workflow."""
+def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None):
+    """Process a single ligand through the workflow.
+
+    Args:
+        ligand_file: Path to ligand structure file
+        args: Command line arguments with explainability flags (exp_lig, exp_prot, exp_3d)
+        calc: SO3LR-SF calculator instance
+        working_protein_path: Path to protein structure file
+        output_dir: Output directory for results
+        optimization_log: List to store optimization details
+        logger: Logging instance
+        preloaded_protein_prolif: Pre-loaded protein structure for explainability analysis
+
+    Returns:
+        tuple: (result_dict, error_message) where result_dict contains energy and analysis data
+    """
 
     ligand_path = Path(ligand_file)
     ligand_name = ligand_path.stem
@@ -716,26 +730,25 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
         # Calculate interaction energy
         logger.info(f"Calculating interaction energy for: {ligand_name}")
 
-        heatmap_output = None
-        if args.explain or args.protein_explain:
-            heatmap_output = output_dir / "ligand_exp" / f"{ligand_name}_heatmap.png"
+        # Create output paths tuple based on explain modes
+        exp_outputs = (
+            output_dir / "ligand_exp" / f"{ligand_name}_heatmap.png" if args.exp_lig else None,
+            output_dir / "pl_2d_exp" / f"{ligand_name}_protein_interactions.png" if args.exp_prot else None,
+            output_dir / "pl_3d_exp" / f"{ligand_name}_3d_visualization.pml" if args.exp_3d else None
+        )
 
-        # Determine explainability mode
-        explainability_mode = args.explain or args.protein_explain or enable_3d_explain
 
         result_from_calc = protein_ligand_interaction(
             working_protein_path, working_ligand_path, calc,
             complex_path=working_complex_path,
-            explainability=explainability_mode,
             eda=args.eda,
-            heatmap_output=heatmap_output,
             verbose=False,
             preloaded_protein_prolif=preloaded_protein_prolif,
-            enable_3d_explain=enable_3d_explain
+            exp_outputs=exp_outputs
         )
 
         # Handle results
-        if explainability_mode or args.eda:
+        if args.exp_lig or args.exp_prot or args.exp_3d or args.eda:
             interaction_energy, analysis = result_from_calc
         else:
             interaction_energy = result_from_calc
