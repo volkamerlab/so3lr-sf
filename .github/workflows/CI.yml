@@ -8,6 +8,10 @@ on:
   # Allows to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+permissions:
+      pull-requests: write
+      contents: write
+
 env:
   PYTHON_VERSION: '3.12'
   # Optimization environment variables
@@ -25,14 +29,6 @@ jobs:
         os: [ubuntu-latest]
         python-version: ['3.12']
     runs-on: ${{ matrix.os }}
-    permissions:
-      # Gives the action the necessary permissions for publishing new
-      # comments in pull requests.
-      pull-requests: write
-      # Gives the action the necessary permissions for pushing data to the
-      # python-coverage-comment-action branch, and for editing existing
-      # comments (to avoid publishing multiple comments in the same PR)
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -125,6 +121,7 @@ jobs:
         with:
           name: coverage-report-${{ matrix.os }}-py${{ matrix.python-version }}
           path: |
+            .coverage
             htmlcov/
             coverage.xml
             coverage.json
@@ -149,7 +146,7 @@ jobs:
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
-          COVERAGE_PATH: coverage.xml
+          COVERAGE_PATH: .
 
       - name: Coverage summary (Push)
         if: github.event_name == 'push'
