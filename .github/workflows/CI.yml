@@ -131,7 +131,6 @@ jobs:
   coverage-report:
     needs: test
     runs-on: ubuntu-latest
-    if: success()  # Only run if test job succeeded
 
     steps:
       - uses: actions/checkout@v4
@@ -141,15 +140,8 @@ jobs:
         with:
           name: coverage-report-ubuntu-latest-py3.12
 
-      - name: Coverage comment (PR only)
-        if: github.event_name == 'pull_request'
-        uses: py-cov-action/python-coverage-comment-action@v3
-        with:
-          GITHUB_TOKEN: ${{ github.token }}
-          COVERAGE_PATH: .
 
-      - name: Coverage summary (Push)
-        if: github.event_name == 'push'
+      - name: Coverage summary
         run: |
           echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
           python3 -c "
