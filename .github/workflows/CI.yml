@@ -25,7 +25,14 @@ jobs:
         os: [ubuntu-latest]
         python-version: ['3.12']
     runs-on: ${{ matrix.os }}
-
+    permissions:
+      # Gives the action the necessary permissions for publishing new
+      # comments in pull requests.
+      pull-requests: write
+      # Gives the action the necessary permissions for pushing data to the
+      # python-coverage-comment-action branch, and for editing existing
+      # comments (to avoid publishing multiple comments in the same PR)
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,59 +96,11 @@ jobs:
           echo "Downloaded SO3LR models to: $(pwd)/so3lr/params"
           ls -la so3lr/params
 
-      - name: Verify SO3LR cache (if restored)
-        if: steps.cache-so3lr.outputs.cache-hit == 'true'
-        run: |
-          echo "SO3LR models restored from cache"
-          ls -la so3lr_models/so3lr/so3lr/params
-
-      - name: Cache efficiency report
-        run: |
-          echo "## Cache Status Report" >> $GITHUB_STEP_SUMMARY
-          echo "- **Poetry Cache**: ${{ steps.cache-poetry.outputs.cache-hit == 'true' && '✅ HIT' || '❌ MISS' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **SO3LR Models Cache**: ${{ steps.cache-so3lr.outputs.cache-hit == 'true' && '✅ HIT' || '❌ MISS' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Virtual Environment Size**: $(du -sh .venv 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
-          echo "- **SO3LR Models Size**: $(du -sh so3lr_models 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
-
       - name: Run tests with coverage
         env:
           SO3LR_MODEL_PATH: ${{ github.workspace }}/so3lr_models/so3lr/so3lr/params
         run: |
           poetry run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json --cov-fail-under=90 -v
-
-      - name: Check coverage threshold
-        run: |
-          echo "## Coverage Threshold Check" >> $GITHUB_STEP_SUMMARY
-
-          # Get coverage as a number and check threshold using Python for reliable comparison
-          poetry run python3 -c "
-          import subprocess
-          import sys
-
-          # Get coverage percentage
-          result = subprocess.run(['poetry', 'run', 'coverage', 'report', '--format=total'],
-                                capture_output=True, text=True, check=True)
-          coverage = float(result.stdout.strip())
-          threshold = 90.0
-
-          # Report to GitHub summary
-          with open('$GITHUB_STEP_SUMMARY', 'a') as f:
-              f.write(f'- **Current Coverage**: {coverage}%\n')
-              f.write(f'- **Required Threshold**: {threshold}%\n')
-
-          print(f'Current Coverage: {coverage}%')
-          print(f'Required Threshold: {threshold}%')
-
-          if coverage < threshold:
-              print(f'❌ FAILURE: Coverage {coverage}% is below required {threshold}% threshold!')
-              with open('$GITHUB_STEP_SUMMARY', 'a') as f:
-                  f.write(f'❌ **FAILURE**: Coverage {coverage}% is below the required {threshold}% threshold!\n')
-              sys.exit(1)
-          else:
-              print(f'✅ SUCCESS: Coverage {coverage}% meets the {threshold}% threshold requirement!')
-              with open('$GITHUB_STEP_SUMMARY', 'a') as f:
-                  f.write(f'✅ **SUCCESS**: Coverage {coverage}% meets the {threshold}% threshold requirement!\n')
-          "
 
       - name: Generate coverage badge
         run: |
@@ -190,7 +149,7 @@ jobs:
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
-          COVERAGE_PATH: .
+          COVERAGE_PATH: coverage.xml
 
       - name: Coverage summary (Push)
         if: github.event_name == 'push'

@@ -279,10 +279,10 @@ def setup_output_directory(protein_path: Union[str, Path], optimize: bool = Fals
         (output_dir / "ligand_exp").mkdir(parents=True, exist_ok=True)
     if exp_prot:
         logger.debug(f"Creating protein explainability subdirectory: {exp_prot}")
-        (output_dir / "protein_exp").mkdir(parents=True, exist_ok=True)
+        (output_dir / "pl_2d_exp").mkdir(parents=True, exist_ok=True)
     if exp_3d:
         logger.debug(f"Creating 3D explainability subdirectory: {exp_3d}")
-        (output_dir / "3d_exp").mkdir(parents=True, exist_ok=True)
+        (output_dir / "pl_3d_exp").mkdir(parents=True, exist_ok=True)
 
     return output_dir
 
