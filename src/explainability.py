@@ -98,7 +98,10 @@ def _create_3d_energy_visualization(
         )
 
         # Clean up temporary file
-        temp_complex_path.unlink(missing_ok=True)
+        try:
+            temp_complex_path.unlink(missing_ok=True)
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to clean up temporary file {temp_complex_path}: {cleanup_err}")
 
         return viz_file
 
