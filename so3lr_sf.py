@@ -13,7 +13,7 @@ Features:
 - Explainability analysis with heatmap generation
 
 Usage:
-    python run_so3lr_sf.py protein.pdb ligands.sdf --trim --optimize --explain
+    python run_so3lr_sf.py protein.pdb ligands.sdf --trim --optimize --exp-lig
 """
 
 import argparse
@@ -45,10 +45,13 @@ Examples:
   python so3lr_sf.py protein.pdb ligand.sdf --optimize
 
   # Full workflow with explainability
-  python so3lr_sf.py protein.pdb ligands.sdf --trim --optimize --explain
+  python so3lr_sf.py protein.pdb ligands.sdf --trim --optimize --exp-lig
+
+  # 3D protein energy visualization
+  python so3lr_sf.py protein.pdb ligands.sdf --exp-prot --exp-3d
 
   # Process ligand directory
-  python so3lr_sf.py protein.pdb ligands.sdf --optimize --explain
+  python so3lr_sf.py protein.pdb ligands.sdf --optimize --exp-lig
         """
     )
 
@@ -76,12 +79,12 @@ Examples:
         help="Optimize structures before energy calculation"
     )
     parser.add_argument(
-        "--explain",
+        "--exp-lig",
         action="store_true",
         help="Generate explainability analysis and heatmaps"
     )
     parser.add_argument(
-        "--protein-explain",
+        "--exp-prot",
         action="store_true",
         help="Generate enhanced explainability with protein-ligand interaction analysis and residue coloring"
     )
@@ -89,6 +92,11 @@ Examples:
         "--eda",
         action="store_true",
         help="Perform Energy Decomposition Analysis - save individual energy terms separately"
+    )
+    parser.add_argument(
+        "--exp-3d",
+        action="store_true",
+        help="Generate 3D PyMOL visualization of protein energy components"
     )
 
     # Trimming parameters
@@ -143,6 +151,11 @@ Examples:
         help="Enable logging output"
     )
     parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug level logging (includes verbose output)"
+    )
+    parser.add_argument(
         "--opt-log",
         action="store_true",
         help="Save optimization details to JSON file"
@@ -155,9 +168,9 @@ def main():
     parser = setup_argument_parser()
     args = parser.parse_args()
 
-    # Setup logging - silent by default, verbose enables logging
-    if args.verbose:
-        setup_logging(verbose=False)  # Show INFO level messages
+    # Setup logging - silent by default, verbose/debug enable logging
+    if args.debug or args.verbose:
+        setup_logging(verbose=args.verbose, debug=args.debug)
     else:
         # Silent by default
         logging.getLogger().setLevel(logging.CRITICAL + 1)
@@ -184,23 +197,27 @@ def main():
             sys.exit(1)
 
         logger.info("Starting SO3LR-SF protein-ligand interaction calculation")
+        logger.debug(f"Command line arguments: {vars(args)}")
         logger.info(f"Protein: {args.protein}")
         logger.info(f"Ligands: {args.ligands}")
-        logger.info(f"Workflow: trim={args.trim}, optimize={args.optimize}, eda={args.eda}, explain={args.explain}, protein-explain={args.protein_explain}")
+        # Check for 3D explain argument (handle hyphen conversion)
+        logger.info(f"Workflow: trim={args.trim}, optimize={args.optimize}, eda={args.eda}, exp-lig={args.exp_lig}, exp-prot={args.exp_prot}, exp-3d={args.exp_3d}")
 
         # Setup output directory and subdirectories
-        explain_mode = args.explain or args.protein_explain
         output_dir = setup_output_directory(
-            protein_path, optimize=args.optimize, trim=args.trim, explain=explain_mode,
+            protein_path, optimize=args.optimize, trim=args.trim,
+            exp_lig=args.exp_lig, exp_prot=args.exp_prot, exp_3d=args.exp_3d,
             steps=args.steps, fmax=args.fmax, radius=args.radius
         )
         logger.info(f"Output directory: {output_dir}")
+        logger.debug(f"Created output subdirectories for workflow modes")
 
         # Setup calculator
         calc_kwargs = {}
-        if args.explain or args.eda or args.protein_explain:
+        if args.exp_lig or args.eda or args.exp_prot or args.exp_3d:
             calc_kwargs['output_per_atom_energy_components'] = True
 
+        logger.debug(f"Calculator kwargs: {calc_kwargs}")
         logger.info("Initializing SO3LRSF calculator...")
         calc = So3lrSfCalculator(model_path=args.model_path, **calc_kwargs)
 
@@ -224,7 +241,7 @@ def main():
 
         # Optional: load ProLIF protein structure for explainability
         preloaded_protein_prolif = None
-        if args.protein_explain:
+        if args.exp_prot:
             preloaded_protein_prolif = load_molecule_to_prolif(working_protein_path, is_protein=True)
         # Step 3: Ligand processing
         logger.info("=== LIGAND PROCESSING PHASE ===")

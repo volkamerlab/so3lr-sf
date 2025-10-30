@@ -9,15 +9,68 @@ import numpy as np
 from pathlib import Path
 from typing import Union, Tuple, Optional, Dict, Any, List
 from ase import Atoms
-from ase.optimize import FIRE, LBFGS
+import ase.optimize
 from ase.neighborlist import neighbor_list
 from ase.constraints import FixAtoms
 
-from .utils import write_structure, write_opt_structure
+from .utils import write_structure, write_opt_structure, get_ligand_files
 from .molecule_loader import load_ase_structure, create_residue_atom_mapping, prepare_mda_universe
 from .calculator import So3lrSfCalculator
 from .interaction_energy import protein_ligand_interaction
 import logging
+
+logger = logging.getLogger(__name__)
+
+
+def get_optimizer(atoms: Atoms, optimizer: str):
+    """
+    Get an ASE optimizer instance for the given atoms.
+
+    Args:
+        atoms: ASE Atoms object to optimize
+        optimizer: Name of the optimizer (case-insensitive)
+
+    Returns:
+        Configured optimizer instance
+
+    Raises:
+        ValueError: If optimizer is unknown or incompatible
+    """
+    optimizer_upper = optimizer.upper()
+
+    # Available optimizers in ASE
+    if optimizer_upper == 'FIRE':
+        return ase.optimize.FIRE(atoms, logfile=None)
+    elif optimizer_upper == 'FIRE2':
+        return ase.optimize.FIRE2(atoms, logfile=None)
+    elif optimizer_upper == 'LBFGS':
+        return ase.optimize.LBFGS(atoms, logfile=None)
+    elif optimizer_upper == 'BFGS':
+        return ase.optimize.BFGS(atoms, logfile=None)
+    elif optimizer_upper == 'BFGSLINESEARCH':
+        return ase.optimize.BFGSLineSearch(atoms, logfile=None)
+    elif optimizer_upper == 'LBFGSLINESEARCH':
+        return ase.optimize.LBFGSLineSearch(atoms, logfile=None)
+    elif optimizer_upper == 'GPMIN':
+        return ase.optimize.GPMin(atoms, logfile=None)
+    elif optimizer_upper == 'MDMIN':
+        return ase.optimize.MDMin(atoms, logfile=None)
+    elif optimizer_upper == 'CELLAWAREBFGS':
+        return ase.optimize.CellAwareBFGS(atoms, logfile=None)
+    elif optimizer_upper == 'ODE12R':
+        return ase.optimize.ODE12r(atoms, logfile=None)
+    elif optimizer_upper == 'GOODOLDQUASINEWTON':
+        return ase.optimize.GoodOldQuasiNewton(atoms, logfile=None)
+    elif optimizer_upper == 'QUASINEWTON':
+        return ase.optimize.QuasiNewton(atoms, logfile=None)
+
+    available_optimizers = [
+        'FIRE', 'FIRE2', 'LBFGS', 'BFGS', 'BFGSLineSearch', 'LBFGSLineSearch',
+        'GPMin', 'MDMin', 'ODE12r', 'GoodOldQuasiNewton', 'QuasiNewton'
+    ]
+
+    raise ValueError(f"Unknown optimizer: {optimizer}. Available optimizers: {', '.join(available_optimizers)}")
+
 
 def trim_structure(
     protein_path: Union[str, Path],
@@ -56,14 +109,6 @@ def trim_structure(
     """
     protein_path = Path(protein_path)
     ligand_path = Path(ligand_path)
-    logger = logging.getLogger(__name__)
-
-    # Set output directory
-    if output_dir is None:
-        output_dir = protein_path.parent
-    else:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
 
     # Read structures
     protein = load_ase_structure(protein_path)[0]
@@ -90,7 +135,7 @@ def trim_structure(
         atoms_to_keep = _trim_by_atoms(protein_positions, ligand_positions, radius, logger)
         trimming_method = "atom"
     else:
-        raise ValueError(f"Unsupported protein file format: {protein_ext}")
+        raise ValueError(f"Unsupported protein file format for trimming: {protein_ext}")
 
     if len(atoms_to_keep) == 0:
         raise ValueError(f"No protein atoms found within {radius} Å of ligand")
@@ -98,14 +143,10 @@ def trim_structure(
     # Create trimmed protein
     trimmed_protein = protein[atoms_to_keep]
 
-    # Generate output filename with trimming method indicator
-    # Preserve original format if input is PDB, otherwise use XYZ
-    output_ext = protein_ext if protein_ext == '.pdb' else '.xyz'
-    trimmed_filename = f"{protein_path.stem}_trimmed_{radius}A_{trimming_method}{output_ext}"
-    trimmed_path = output_dir / trimmed_filename
+    trimmed_protein_path = protein_path.with_name(f"{protein_path.stem}_trimmed_{radius}A_{trimming_method}{protein_ext}")
 
     # Save trimmed protein
-    output_path = write_structure(trimmed_protein, trimmed_path)
+    output_path = write_structure(trimmed_protein, trimmed_protein_path)
 
     logger.info(f"Trimmed protein ({len(trimmed_protein)} atoms from {len(protein)} original atoms) saved to: {output_path}")
     logger.info(f"Trimming method: {trimming_method}-based")
@@ -159,22 +200,18 @@ def _trim_by_residues(protein_path: Path, protein_positions: np.ndarray, ligand_
         # Create MDAnalysis universe to get residue information
         universe = prepare_mda_universe(protein_path)
         residue_atom_mapping = create_residue_atom_mapping(universe)
-
+        logger.debug(f"Residue-atom mapping created with {len(residue_atom_mapping)} residues")
+        
         # First find individual atoms within radius
-        atoms_within_radius = set()
-        for i, prot_pos in enumerate(protein_positions):
-            distances = np.linalg.norm(ligand_positions - prot_pos, axis=1)
-            min_distance = np.min(distances)
-
-            if min_distance <= radius:
-                atoms_within_radius.add(i)
-
+        atoms_within_radius = _trim_by_atoms(protein_positions, ligand_positions, radius, logger)
+        
         # Then identify which residues these atoms belong to
         residues_to_keep = set()
         for residue_id, atom_indices in residue_atom_mapping.items():
             # Check if any atom from this residue is within radius
             if any(atom_idx in atoms_within_radius for atom_idx in atom_indices):
                 residues_to_keep.add(residue_id)
+        logger.info(f"Residue-based trimming: {len(residues_to_keep)} complete residues selected")
 
         # Finally, include ALL atoms from selected residues
         atoms_to_keep = []
@@ -183,9 +220,6 @@ def _trim_by_residues(protein_path: Path, protein_positions: np.ndarray, ligand_
 
         # Sort atom indices to maintain order
         atoms_to_keep = sorted(set(atoms_to_keep))
-
-        logger.info(f"Residue-based trimming: {len(residues_to_keep)} complete residues selected")
-        logger.info(f"Individual atoms within radius: {len(atoms_within_radius)}")
         logger.info(f"Total atoms after including complete residues: {len(atoms_to_keep)}")
 
         return atoms_to_keep
@@ -197,7 +231,6 @@ def _trim_by_residues(protein_path: Path, protein_positions: np.ndarray, ligand_
 
 def perform_trimming(protein_path, ligands_source, radius, trim_lig, output_dir, logger):
     """Handle protein trimming workflow."""
-    from .utils import get_ligand_files
 
     logger.info("=== TRIMMING PHASE ===")
 
@@ -206,7 +239,7 @@ def perform_trimming(protein_path, ligands_source, radius, trim_lig, output_dir,
         if not Path(trim_lig).exists():
             raise FileNotFoundError(f"Specified trim ligand not found: {trim_lig}")
         representative_ligand = trim_lig
-        logger.info(f"Using specified ligand for trimming: {representative_ligand}")
+        logger.info(f"Using the specified ligand for trimming: {representative_ligand}")
     else:
         ligand_files = get_ligand_files(ligands_source, output_dir)
         if not ligand_files:
@@ -334,7 +367,6 @@ def create_optimization_constraint(
     Returns:
         FixAtoms constraint object or None if no atoms to fix
     """
-    logger = logging.getLogger(__name__)
     n_prot = n_protein_atoms
     n_lig = len(complex_atoms) - n_protein_atoms
 
@@ -396,7 +428,7 @@ def optimize_structure(
     Args:
         atoms: ASE Atoms object to optimize
         calc: So3lrSfCalculator instance to use for optimization
-        optimizer: Optimization algorithm ('FIRE' or 'LBFGS')
+        optimizer: Optimization algorithm (BFGS, BFGSLineSearch, FIRE, FIRE2, GPMin, GoodOldQuasiNewton, LBFGS, LBFGSLineSearch, MDMin, ODE12r, QuasiNewton)
         fmax: Force convergence criterion in eV/Angstrom (default: 0.01)
         steps: Maximum number of optimization steps (default: 1000)
         output_path: Path for output file
@@ -421,6 +453,7 @@ def optimize_structure(
     # Set output directory
     if output_path.is_file():
         # return the path if it's already a file
+        logger.info(f"Output path is already a file: {output_path}, skipping optimization.")
         return str(output_path), {
             'output_file': output_path,
             'existing_file': True,
@@ -435,6 +468,7 @@ def optimize_structure(
     # Create and apply constraint if opt_radius is provided
     constraint = None
     if opt_radius is not None and n_protein_atoms is not None:
+        logger.info(f"Applying optimization constraints with radius: {opt_radius} Å")
         constraint = create_optimization_constraint(atoms, n_protein_atoms, opt_radius, protein_path)
 
 
@@ -453,12 +487,7 @@ def optimize_structure(
         atoms.set_constraint(constraint)
         
     # Choose and configure optimizer
-    if optimizer.upper() == 'FIRE':
-        opt = FIRE(atoms, logfile=None)
-    elif optimizer.upper() == 'LBFGS':
-        opt = LBFGS(atoms, logfile=None)
-    else:
-        raise ValueError(f"Unknown optimizer: {optimizer}. Choose 'FIRE' or 'LBFGS'")
+    opt = get_optimizer(atoms, optimizer)
 
     # Run optimization - always save result regardless of convergence
     converged = False
@@ -471,14 +500,14 @@ def optimize_structure(
         nsteps = opt.nsteps
     except Exception as e:
         optimization_error = str(e)
-        print(f"Warning: Optimization encountered issues: {e}")
-        print("Saving current structure anyway...")
+        logger.error(f"Optimization encountered issues: {e}")
+        logger.warning("Saving current structure anyway...")
 
     # Get final energy (even if optimization didn't converge)
     try:
         final_energy = atoms.get_potential_energy()
     except Exception as e:
-        print(f"Warning: Could not calculate final energy: {e}")
+        logger.warning(f"Could not calculate final energy: {e}")
         final_energy = initial_energy  # Use initial energy as fallback
 
     # Calculate structural changes
@@ -553,15 +582,15 @@ def optimize_structure(
 
     # Print status
     if converged:
-        print(f"Optimization converged in {nsteps} steps")
+        logger.info(f"Optimization converged in {nsteps} steps")
     else:
-        print(f"Optimization did not converge in {nsteps} steps (max: {steps})")
+        logger.info(f"Optimization did not converge in {nsteps} steps (max: {steps})")
 
     if optimization_error:
-        print(f"Optimization encountered issues: {optimization_error}")
+        logger.warning(f"Optimization encountered issues: {optimization_error}")
 
-    print(f"Energy change: {final_energy - initial_energy:.6f} eV")
-    print(f"Structure saved to: {output_path_str}")
+    logger.info(f"Energy change: {final_energy - initial_energy:.6f} eV")
+    logger.info(f"Structure saved to: {output_path_str}")
 
     return output_path_str, opt_info
 
@@ -616,7 +645,7 @@ def extract_ligands(
         output_file = write_structure(atoms, output_path)
         output_files.append(output_file)
 
-    print(f"Extracted {len(output_files)} structures to {output_dir}")
+    logger.info(f"Extracted {len(output_files)} structures to {output_dir}")
 
     return output_files
 
@@ -647,8 +676,22 @@ def optimize_protein(working_protein_path, calc, optimizer, fmax, steps, output_
     return optimized_path
 
 
-def process_single_ligand(ligand_file, args, calc, working_protein_path, output_dir, optimization_log, logger, preloaded_protein_prolif=None):
-    """Process a single ligand through the workflow."""
+def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None):
+    """Process a single ligand through the workflow.
+
+    Args:
+        ligand_file: Path to ligand structure file
+        args: Command line arguments with explainability flags (exp_lig, exp_prot, exp_3d)
+        calc: SO3LR-SF calculator instance
+        working_protein_path: Path to protein structure file
+        output_dir: Output directory for results
+        optimization_log: List to store optimization details
+        logger: Logging instance
+        preloaded_protein_prolif: Pre-loaded protein structure for explainability analysis
+
+    Returns:
+        tuple: (result_dict, error_message) where result_dict contains energy and analysis data
+    """
 
     ligand_path = Path(ligand_file)
     ligand_name = ligand_path.stem
@@ -716,25 +759,25 @@ def process_single_ligand(ligand_file, args, calc, working_protein_path, output_
         # Calculate interaction energy
         logger.info(f"Calculating interaction energy for: {ligand_name}")
 
-        heatmap_output = None
-        if args.explain or args.protein_explain:
-            heatmap_output = output_dir / "ligand_exp" / f"{ligand_name}_heatmap.png"
+        # Create output paths tuple based on explain modes
+        exp_outputs = (
+            output_dir / "ligand_exp" / f"{ligand_name}_heatmap.png" if args.exp_lig else None,
+            output_dir / "pl_2d_exp" / f"{ligand_name}_protein_interactions.png" if args.exp_prot else None,
+            output_dir / "pl_3d_exp" / f"{ligand_name}_3d_visualization.pml" if args.exp_3d else None
+        )
 
-        # Determine explainability mode
-        explainability_mode = args.explain or args.protein_explain
 
         result_from_calc = protein_ligand_interaction(
             working_protein_path, working_ligand_path, calc,
             complex_path=working_complex_path,
-            explainability=explainability_mode,
             eda=args.eda,
-            heatmap_output=heatmap_output,
             verbose=False,
-            preloaded_protein_prolif=preloaded_protein_prolif  # Enhanced mode if not None
+            preloaded_protein_prolif=preloaded_protein_prolif,
+            exp_outputs=exp_outputs
         )
 
         # Handle results
-        if explainability_mode or args.eda:
+        if args.exp_lig or args.exp_prot or args.exp_3d or args.eda:
             interaction_energy, analysis = result_from_calc
         else:
             interaction_energy = result_from_calc

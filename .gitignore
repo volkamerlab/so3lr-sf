@@ -22,3 +22,9 @@ htmlcov/
 protein_ligand_analyzer/*
 example*
 debug*
+
+tests/test_data/*
+Docker/*
+calculate*
+
+trial*

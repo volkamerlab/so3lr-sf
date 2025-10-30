@@ -189,7 +189,7 @@ class TestExplainabilityModule:
             output_path=temp_dir / "test_protein_heatmap.png",
             title="Test Protein Interaction Heatmap"
         )
-        output_path = temp_dir / "test_protein_heatmap_ifp.png"
+        output_path = temp_dir / "test_protein_heatmap.png"
 
         assert fig is not None
         assert isinstance(fig, plt.Figure)
@@ -290,7 +290,8 @@ class TestExplainabilityModule:
 
         fig = generate_energy_heatmap(
             ligand_path=ligand_path,
-            ligand_energy_differences=sample_ligand_energy_differences
+            ligand_energy_differences=sample_ligand_energy_differences,
+            output_paths=(None, None, None)
         )
 
         assert fig is not None
@@ -328,6 +329,7 @@ class TestExplainabilityModule:
             fig = generate_energy_heatmap(
                 ligand_path=ligand_path,
                 ligand_energy_differences=sample_ligand_energy_differences,
+                output_paths=(None, None, None),
                 protein_energy_differences=sample_protein_energy_differences,
                 preloaded_protein_prolif=mock_preloaded_protein
             )
@@ -466,7 +468,7 @@ class TestExplainabilityModule:
             output_path=temp_dir / "water_protein_interaction.png",
             title="Water-Protein Interaction Integration Test"
         )
-        output_path = temp_dir / "water_protein_interaction_ifp.png"
+        output_path = temp_dir / "water_protein_interaction.png"
         assert fig is not None
         assert output_path.exists()
         assert output_path.stat().st_size > 0

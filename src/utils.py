@@ -4,13 +4,15 @@ Utility functions for SO3LR-SF
 This module contains utility functions for model detection, structure reading,
 and file handling operations.
 """
-
+import json
 import logging
 import numpy as np
 from pathlib import Path
 from typing import Optional, List, Union
 from ase import Atoms
 from ase.io import write
+
+logger = logging.getLogger(__name__)
 
 def write_structure(atoms: Atoms, file_path: Union[str, Path]) -> str:
     """
@@ -28,12 +30,16 @@ def write_structure(atoms: Atoms, file_path: Union[str, Path]) -> str:
         >>> write_structure(atoms, "output.pdb")
     """
     file_path = Path(file_path)
+    logger.debug(f"Writing structure with {len(atoms)} atoms to {file_path}")
 
     # Create directory if it doesn't exist
-    file_path.parent.mkdir(parents=True, exist_ok=True)
+    if not file_path.parent.exists():
+        logger.debug(f"Creating directory: {file_path.parent}")
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         write(str(file_path), atoms)
+        logger.debug(f"Structure successfully written to {file_path}")
         return str(file_path)
     except Exception as e:
         raise RuntimeError(f"Failed to write structure to {file_path}: {e}")
@@ -77,59 +83,6 @@ def validate_structure(atoms: Atoms) -> bool:
 
     return True
 
-
-# def rdkit_to_ase(mol):
-#     """
-#     Convert RDKit molecule to ASE Atoms object.
-
-#     Args:
-#         mol: RDKit molecule object
-
-#     Returns:
-#         Atoms: ASE Atoms object
-#     """
-#     conf = mol.GetConformer()
-#     symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
-#     positions = [conf.GetAtomPosition(i) for i in range(mol.GetNumAtoms())]
-#     positions = [[p.x, p.y, p.z] for p in positions]
-#     return Atoms(symbols=symbols, positions=positions)
-
-
-
-# def load_molecule_to_rdkit(file_path: Union[str, Path]):
-#     """
-#     Universal function to load any molecule (protein or ligand) to RDKit format.
-
-#     Supports: PDB, SDF, XYZ formats
-
-#     Args:
-#         file_path: Path to structure file
-
-#     Returns:
-#         rdkit.Chem.Mol: RDKit molecule object
-
-#     Raises:
-#         ValueError: If file format is not supported or molecule cannot be loaded
-#     """
-#     file_path = Path(file_path)
-#     suffix = file_path.suffix.lower()
-
-#     # Load RDKit molecule based on format
-#     if suffix == '.pdb':
-#         mol = Chem.MolFromPDBFile(str(file_path), removeHs=False)
-#     elif suffix == '.sdf':
-#         mol = Chem.MolFromMolFile(str(file_path))
-#     elif suffix == '.xyz':
-#         mol = read_xyz_with_bonds(file_path)
-#     else:
-#         raise ValueError(f"Unsupported file format: {suffix}. Supported formats: .pdb, .sdf, .xyz")
-
-#     if mol is None:
-#         raise ValueError(f"Could not load molecule from {file_path}")
-
-#     return mol
-
-
 def get_ligand_files(ligands_input: str, output_dir: Optional[Union[str, Path]] = None) -> List[str]:
     """
     Get list of ligand files from input (single file, directory, or multi-SDF).
@@ -141,7 +94,6 @@ def get_ligand_files(ligands_input: str, output_dir: Optional[Union[str, Path]] 
     Returns:
         List of ligand file paths
     """
-    logger = logging.getLogger(__name__)
     ligands_path = Path(ligands_input)
 
     if not ligands_path.exists():
@@ -236,9 +188,26 @@ def write_opt_structure(
     return write_structure(atoms, file_path)
 
 
-def setup_output_directory(protein_path, optimize=False, trim=False, explain=False,
-                          steps=None, fmax=None, radius=None):
-    """Setup and create output directory based on workflow parameters."""
+def setup_output_directory(protein_path: Union[str, Path], optimize: bool = False, trim: bool = False,
+                          exp_lig: bool = False, exp_prot: bool = False, exp_3d: bool = False,
+                          steps: Optional[int] = None, fmax: Optional[float] = None, radius: Optional[float] = None) -> Path:
+    """Setup and create output directory based on workflow parameters.
+
+    Args:
+        protein_path: Path to protein structure file
+        optimize: Whether structure optimization will be performed
+        trim: Whether protein trimming will be performed
+        exp_lig: Generate ligand explainability analysis and heatmaps
+        exp_prot: Generate protein explainability with interaction analysis
+        exp_3d: Generate 3D PyMOL visualization of protein energy components
+        steps: Optimization steps (for directory naming)
+        fmax: Force maximum for optimization (for directory naming)
+        radius: Trimming radius (for directory naming)
+
+    Returns:
+        Path: Created output directory path
+    """
+    
     output_name = "results"
     if optimize:
         output_name += f"_steps_{steps}_fmax{fmax}"
@@ -246,21 +215,33 @@ def setup_output_directory(protein_path, optimize=False, trim=False, explain=Fal
         output_name += f"_trim_{radius}A"
 
     output_dir = Path(protein_path).parent / output_name
+    logger.debug(f"Creating output directory: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create subdirectories
     if optimize:
         (output_dir / "opt_ligand").mkdir(parents=True, exist_ok=True)
         (output_dir / "opt_complexes").mkdir(parents=True, exist_ok=True)
-    if explain:
+        logger.debug(f"Created optimization subdirectories in: {output_dir}")
+        
+    # Create explain subdirectories based on specific modes
+    if exp_lig:
         (output_dir / "ligand_exp").mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Created ligand explainability subdirectory: {output_dir / 'ligand_exp'}")
+
+    if exp_prot:
+        (output_dir / "pl_2d_exp").mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Created protein explainability subdirectory: {output_dir / 'pl_2d_exp'}")
+
+    if exp_3d:
+        (output_dir / "pl_3d_exp").mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Created 3D explainability subdirectory: {output_dir / 'pl_3d_exp'}")
 
     return output_dir
 
 
 def save_results(results, output_dir, args, protein_path, optimization_log, logger):
     """Save results and optimization logs."""
-    import json
 
     # Save results summary
     if output_dir:
@@ -277,7 +258,9 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
                     'trim': args.trim,
                     'trim_radius': args.radius if args.trim else None,
                     'optimize': args.optimize,
-                    'explain': args.explain,
+                    'ligand explain 2D': args.exp_lig,
+                    'PL interactions explain 2D': args.exp_prot,
+                    'PL interactions explain 3D': args.exp_3d,
                     'optimizer': args.optimizer if args.optimize else None,
                     'fmax': args.fmax if args.optimize else None,
                     'steps': args.steps if args.optimize else None
@@ -294,6 +277,7 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
 
     # Save optimization log
     if args.opt_log and optimization_log:
+        logger.debug("Saving optimization log...")
         counter = 1
         opt_log_file = output_dir / "optimization_log.json"
         while opt_log_file.exists():
@@ -317,12 +301,13 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
         logger.info(f"Optimization log saved: {opt_log_file}")
 
 
-def setup_logging(verbose: bool = False):
+def setup_logging(verbose: bool = False, debug: bool = False):
     """
     Setup logging configuration.
 
     Args:
-        verbose: If True, set logging level to DEBUG for our modules, otherwise INFO
+        verbose: If True, set logging level to INFO for our modules
+        debug: If True, set logging level to DEBUG for our modules (overrides verbose)
     """
     # Clear any existing handlers to avoid conflicts
     for handler in logging.root.handlers[:]:
@@ -336,15 +321,16 @@ def setup_logging(verbose: bool = False):
         force=True
     )
 
-    # Set our application loggers to DEBUG if verbose is requested
-    if verbose:
+    # Set our application loggers based on debug/verbose flags
+    if debug or verbose:
         our_loggers = [
             logging.getLogger('src'),
             logging.getLogger('__main__'),
             logging.getLogger('run_so3lr_sf')
         ]
+        log_level = logging.DEBUG if debug else logging.INFO
         for logger in our_loggers:
-            logger.setLevel(logging.DEBUG)
+            logger.setLevel(log_level)
 
     # Suppress verbose external libraries
     external_loggers = [

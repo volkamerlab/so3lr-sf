@@ -7,6 +7,8 @@ by calculating energy differences and generating molecular heatmaps.
 
 import io
 import logging
+from ase import Atoms
+from ase.io import read
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -19,9 +21,79 @@ import prolif as plf
 
 logger = logging.getLogger(__name__)
 
-from .molecule_loader import load_molecule_to_prolif
+from .utils import write_structure
+from .molecule_loader import load_molecule_to_prolif, load_ase_structure
 from .explain_utils import (compute_protein_ligand_interactions, get_atom_mappings, create_colorbar, similarity_map_gen, get_interaction_color,
-                          add_interaction_summary, residue_weights_calculation)
+                          add_interaction_summary, residue_weights_calculation, atom_weights_calculation)
+from .visualizer import create_pymol_session
+
+
+def _create_3d_energy_visualization(
+    protein_atoms: Atoms,
+    ligand_path: Union[str, Path],
+    protein_energy_differences: Dict[str, np.ndarray],
+    ligand_energy_differences: Dict[str, np.ndarray],
+    output_path: Union[str, Path] = None
+) -> Optional[str]:
+    """
+    Create 3D PyMOL visualization for protein-ligand complex with energy mapping.
+
+    Args:
+        protein_atoms: ASE Atoms object for protein structure
+        ligand_path: Path to ligand structure file
+        protein_energy_differences: Per-atom energy differences for protein
+        ligand_energy_differences: Per-atom energy differences for ligand
+        output_path: Optional output path for PyMOL script file
+
+    Returns:
+        Path to PyMOL script file if successful, None if failed
+    """
+    try:
+        ligand_path = Path(ligand_path)
+
+        ligand_name = ligand_path.stem
+        logger.info("Creating 3D PyMOL visualization with mapped weights...")
+
+        # Load ligand atoms for proper mapping
+        ligand_atoms = load_ase_structure(ligand_path)[0]
+
+        # Calculate properly mapped atom weights for 3D visualization
+        atom_weights_mapped = atom_weights_calculation(
+            protein_energy_differences=protein_energy_differences,
+            ligand_energy_differences=ligand_energy_differences,
+            protein_atoms=protein_atoms,
+            ligand_atoms=ligand_atoms
+        )
+
+        logger.debug(f"Complex energy components: {list(atom_weights_mapped.keys())}")
+
+
+        # Create complex structure file in pdb format
+        complex_path = output_path.parent / f"complex_{ligand_name}.pdb"
+        # Load ligand and combine with protein
+        ligand_atoms = read(str(ligand_path))
+        complex_atoms = protein_atoms + ligand_atoms
+             
+        write_structure(complex_atoms, str(complex_path))
+        if not complex_path.exists():
+            raise FileNotFoundError(f"Failed to create complex file: {complex_path}")
+
+        # Calculate center of mass for visualization centering
+        center_of_mass = np.mean(complex_atoms.get_positions(), axis=0)   
+
+        # Generate PyMOL visualization
+        viz_file = create_pymol_session(
+            complex_path=complex_path,
+            atom_weights_mapped=atom_weights_mapped,
+            output_path=output_path,
+            center_of_mass=center_of_mass
+        )
+
+        return viz_file
+
+    except Exception as e:
+        logger.error(f"Failed to create 3D visualization: {e}")
+        return None
 
 
 def _fp_interaction_mapping(preloaded_protein_prolif: plf.Molecule,
@@ -276,6 +348,8 @@ def generate_protein_interaction_heatmap(
         residue_atom_mapping: Optional mapping of residues to atom indices
         output_path: Optional path to save the figure
         title: Optional title for the figure
+        total_interaction_energy: Optional total interaction energy for percentage calculations
+        protein_atoms: Optional ASE Atoms object for protein structure. When provided, creates PyMOL session with 3D visualization of mapped weights
 
     Returns:
         plt.Figure: Generated matplotlib figure with energy heatmaps and interaction visualization
@@ -288,7 +362,7 @@ def generate_protein_interaction_heatmap(
     residue_weights = None
     if protein_energy_differences is not None and residue_atom_mapping is not None:
         residue_weights = residue_weights_calculation(residue_atom_mapping, protein_energy_differences)
-
+        
     residue_interactions = _group_interactions_by_residue(atom_mappings)
     rdDepictor.Compute2DCoords(rdkit_mol, bondLength=3.0)
 
@@ -335,6 +409,7 @@ def generate_protein_interaction_heatmap(
 
         ax.imshow(ligand_heatmap_img)
         ax.axis("off")
+
         # Use extended_weights which includes both ligand and protein residue contributions
         create_colorbar(fig, ax, global_max, component, np.array(extended_weights))
 
@@ -366,7 +441,6 @@ def generate_protein_interaction_heatmap(
 
     # Save figure if requested
     if output_path:
-        output_path = Path(output_path).with_stem(output_path.stem + "_ifp")
         fig.savefig(str(output_path), dpi=300, bbox_inches='tight')
         logger.info(f"Protein interaction heatmap saved to: {output_path}")
 
@@ -376,11 +450,12 @@ def generate_protein_interaction_heatmap(
 def generate_energy_heatmap(
     ligand_path: Union[str, Path],
     ligand_energy_differences: Dict[str, np.ndarray],
-    output_path: Optional[Union[str, Path]] = None,
+    output_paths: Tuple[Optional[Union[str, Path]], Optional[Union[str, Path]], Optional[Union[str, Path]]] = None,
     title: Optional[str] = None,
     protein_energy_differences: Optional[Dict[str, np.ndarray]] = None,
     preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None,
-    total_interaction_energy: Optional[float] = None
+    total_interaction_energy: Optional[float] = None,
+    protein_atoms: Atoms = None,
 ) -> plt.Figure:
     """
     Generate heatmap visualization of ligand atom energy contributions.
@@ -398,12 +473,21 @@ def generate_energy_heatmap(
         plt.Figure: Generated matplotlib figure with optional protein residue information
     """
     ligand_path = Path(ligand_path)
-    logger.info(f"Generating heatmap for ligand: {ligand_path}")
+    logger.info(f"Generating heatmap for : {ligand_path}")
     # Read ligand molecule for visualization using universal function
     mol = load_molecule_to_prolif(ligand_path)
-
     # Use enhanced visualizer if protein data is provided (protein mode)
-    if preloaded_protein_prolif is not None:
+    # Create 3D PyMOL visualization if requested
+    if protein_atoms is not None and protein_energy_differences is not None:
+        _create_3d_energy_visualization(
+            protein_atoms=protein_atoms,
+            ligand_path=ligand_path,
+            protein_energy_differences=protein_energy_differences,
+            ligand_energy_differences=ligand_energy_differences,
+            output_path=output_paths[-1]
+        )
+
+    if preloaded_protein_prolif is not None:         
         atom_mappings = _fp_interaction_mapping(preloaded_protein_prolif, mol)
         residue_atom_mapping = preloaded_protein_prolif[1]  # Get residue mapping
         # Use the protein interaction heatmap with proper bond coloring and interaction legends
@@ -413,17 +497,16 @@ def generate_energy_heatmap(
             atom_mappings=atom_mappings,
             protein_energy_differences=protein_energy_differences,
             residue_atom_mapping=residue_atom_mapping,
-            output_path=output_path,
+            output_path=output_paths[1],
             title=title,
-            total_interaction_energy=total_interaction_energy
+            total_interaction_energy=total_interaction_energy,
         )
-
     else:
         # Use basic ligand heatmap for non-protein mode
         return generate_ligand_heatmap(
             ligand_path=ligand_path,
             ligand_energy_differences=ligand_energy_differences,
-            output_path=output_path,
+            output_path=output_paths[0],
             title=title,
             total_interaction_energy=total_interaction_energy
         )
