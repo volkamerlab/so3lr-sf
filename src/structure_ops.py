@@ -9,7 +9,7 @@ import numpy as np
 from pathlib import Path
 from typing import Union, Tuple, Optional, Dict, Any, List
 from ase import Atoms
-from ase.optimize import FIRE, LBFGS
+import ase.optimize
 from ase.neighborlist import neighbor_list
 from ase.constraints import FixAtoms
 
@@ -20,6 +20,57 @@ from .interaction_energy import protein_ligand_interaction
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def get_optimizer(atoms: Atoms, optimizer: str):
+    """
+    Get an ASE optimizer instance for the given atoms.
+
+    Args:
+        atoms: ASE Atoms object to optimize
+        optimizer: Name of the optimizer (case-insensitive)
+
+    Returns:
+        Configured optimizer instance
+
+    Raises:
+        ValueError: If optimizer is unknown or incompatible
+    """
+    optimizer_upper = optimizer.upper()
+
+    # Available optimizers in ASE
+    if optimizer_upper == 'FIRE':
+        return ase.optimize.FIRE(atoms, logfile=None)
+    elif optimizer_upper == 'FIRE2':
+        return ase.optimize.FIRE2(atoms, logfile=None)
+    elif optimizer_upper == 'LBFGS':
+        return ase.optimize.LBFGS(atoms, logfile=None)
+    elif optimizer_upper == 'BFGS':
+        return ase.optimize.BFGS(atoms, logfile=None)
+    elif optimizer_upper == 'BFGSLINESEARCH':
+        return ase.optimize.BFGSLineSearch(atoms, logfile=None)
+    elif optimizer_upper == 'LBFGSLINESEARCH':
+        return ase.optimize.LBFGSLineSearch(atoms, logfile=None)
+    elif optimizer_upper == 'GPMIN':
+        return ase.optimize.GPMin(atoms, logfile=None)
+    elif optimizer_upper == 'MDMIN':
+        return ase.optimize.MDMin(atoms, logfile=None)
+    elif optimizer_upper == 'CELLAWAREBFGS':
+        return ase.optimize.CellAwareBFGS(atoms, logfile=None)
+    elif optimizer_upper == 'ODE12R':
+        return ase.optimize.ODE12r(atoms, logfile=None)
+    elif optimizer_upper == 'GOODOLDQUASINEWTON':
+        return ase.optimize.GoodOldQuasiNewton(atoms, logfile=None)
+    elif optimizer_upper == 'QUASINEWTON':
+        return ase.optimize.QuasiNewton(atoms, logfile=None)
+
+    available_optimizers = [
+        'FIRE', 'FIRE2', 'LBFGS', 'BFGS', 'BFGSLineSearch', 'LBFGSLineSearch',
+        'GPMin', 'MDMin', 'ODE12r', 'GoodOldQuasiNewton', 'QuasiNewton'
+    ]
+
+    raise ValueError(f"Unknown optimizer: {optimizer}. Available optimizers: {', '.join(available_optimizers)}")
+
 
 def trim_structure(
     protein_path: Union[str, Path],
@@ -377,7 +428,7 @@ def optimize_structure(
     Args:
         atoms: ASE Atoms object to optimize
         calc: So3lrSfCalculator instance to use for optimization
-        optimizer: Optimization algorithm ('FIRE' or 'LBFGS')
+        optimizer: Optimization algorithm (BFGS, BFGSLineSearch, FIRE, FIRE2, GPMin, GoodOldQuasiNewton, LBFGS, LBFGSLineSearch, MDMin, ODE12r, QuasiNewton)
         fmax: Force convergence criterion in eV/Angstrom (default: 0.01)
         steps: Maximum number of optimization steps (default: 1000)
         output_path: Path for output file
@@ -436,12 +487,7 @@ def optimize_structure(
         atoms.set_constraint(constraint)
         
     # Choose and configure optimizer
-    if optimizer.upper() == 'FIRE':
-        opt = FIRE(atoms, logfile=None)
-    elif optimizer.upper() == 'LBFGS':
-        opt = LBFGS(atoms, logfile=None)
-    else:
-        raise ValueError(f"Unknown optimizer: {optimizer}. Choose 'FIRE' or 'LBFGS'")
+    opt = get_optimizer(atoms, optimizer)
 
     # Run optimization - always save result regardless of convergence
     converged = False

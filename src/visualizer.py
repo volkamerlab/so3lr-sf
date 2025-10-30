@@ -216,8 +216,16 @@ def apply_energy_coloring(f, structure_name: str, component: str, atom_weights: 
         - Color names follow pattern: {red/blue}_{component}_{index}
         - Assumes atoms are within near_ligand_{structure_name} selection
     """
-    energy_values = atom_weights.values()
-    min_val, max_val = min(energy_values), max(energy_values)
+    # Filter out invalid energy values first
+    valid_energy_values = []
+    for idx, energy_val in atom_weights.items():
+        try:
+            valid_energy_values.append(float(energy_val))
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid energy value encountered: {energy_val}, skipping atom {idx}")
+            continue
+
+    min_val, max_val = min(valid_energy_values), max(valid_energy_values)
     max_abs = max(abs(min_val), abs(max_val))
 
     # Only color atoms with significant energy (>5% of max)

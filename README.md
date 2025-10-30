@@ -12,7 +12,7 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 ### Core Functionality
 - **Protein-Ligand Binding Energy Calculation**: Calculate binding energies using SO3LR force fields
 - **Protein Trimming**: Trim protein structures around ligands to reduce computational cost
-- **Structure Optimization**: Optimize protein, ligand, and complex structures with FIRE/LBFGS algorithms
+- **Structure Optimization**: Optimize protein, ligand, and complex structures with many ASE optimization algorithms
 - **Energy decomposition analysis (EDA)**: Analysis of each energy term individually
 - **Ligand Explainability**: Generate per-atom energy contributions and 2D molecular heatmaps for ligands
 - **Protein Explainability**: ProLIF-powered interaction fingerprinting with residue-level energy contributions and bond-colored visualizations
@@ -136,7 +136,7 @@ results_steps_100_fmax0.05/
 - `--trim-lig FILE`: Specific ligand file to use for trimming
 
 ### Optimization Parameters
-- `--optimizer {FIRE,LBFGS}`: Optimization algorithm (default: FIRE)
+- `--optimizer {FIRE,FIRE2,LBFGS,BFGS,BFGSLineSearch,LBFGSLineSearch,GPMin,MDMin,ODE12r,GoodOldQuasiNewton,QuasiNewton}`: Optimization algorithm (default: FIRE)
 - `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
 - `--steps INT`: Maximum optimization steps (default: 100)
 - `--opt-radius FLOAT`: Optimization radius around ligand
