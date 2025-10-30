@@ -14,7 +14,8 @@ from typing import Dict, Any, Optional, Tuple, List
 from matplotlib.colors import Normalize
 from rdkit.Chem import Draw
 from rdkit.Chem.Draw import SimilarityMaps
-
+import logging
+logger = logging.getLogger(__name__)
 
 ########################## GENERAL VISUALIZATION UTILITIES #########################
 def create_colorbar(fig, ax, global_max: float, component: str, weights: np.ndarray) -> None:
@@ -336,6 +337,88 @@ def residue_weights_calculation(
         comp_dict['Total'] = total
 
     return residue_weights
+
+
+def atom_weights_calculation(
+    protein_energy_differences: Dict[str, np.ndarray],
+    ligand_energy_differences: Dict[str, np.ndarray],
+    protein_atoms,
+    ligand_atoms
+) -> Dict[str, Dict[int, float]]:
+    """
+    Calculate per-atom mapped weights by concatenating protein and ligand energy differences.
+
+    Args:
+        protein_energy_differences: Per-atom energy differences for protein atoms
+        ligand_energy_differences: Per-atom energy differences for ligand atoms
+        protein_atoms: ASE Atoms object for protein structure
+        ligand_atoms: ASE Atoms object for ligand structure
+
+    Returns:
+        Dict[str, Dict[int, float]]: Nested dict mapping:
+                                   {component: {atom_index: weight_value}}
+                                   where atom indices are concatenated (protein first, then ligand)
+    """
+
+
+    logger.debug("Calculating concatenated atom weights for 3D visualization")
+    logger.debug(f"Protein atoms: {len(protein_atoms)}, Ligand atoms: {len(ligand_atoms)}")
+
+    # Validate input dimensions
+    n_protein_atoms = len(protein_atoms)
+    n_ligand_atoms = len(ligand_atoms)
+
+    # Check that all protein components have correct number of atoms
+    for comp, values in protein_energy_differences.items():
+        if len(values) != n_protein_atoms:
+            raise ValueError(f"Protein energy component '{comp}' has {len(values)} values "
+                           f"but protein has {n_protein_atoms} atoms")
+
+    # Check that all ligand components have correct number of atoms
+    for comp, values in ligand_energy_differences.items():
+        if len(values) != n_ligand_atoms:
+            raise ValueError(f"Ligand energy component '{comp}' has {len(values)} values "
+                           f"but ligand has {n_ligand_atoms} atoms")
+
+    # Check that component keys match
+    protein_components = set(protein_energy_differences.keys())
+    ligand_components = set(ligand_energy_differences.keys())
+
+    if protein_components != ligand_components:
+        logger.warning(f"Energy component mismatch - Protein: {protein_components}, Ligand: {ligand_components}")
+        # Use intersection of components
+        common_components = protein_components & ligand_components
+        if not common_components:
+            raise ValueError("No common energy components found between protein and ligand")
+        logger.info(f"Using common components: {common_components}")
+    else:
+        common_components = protein_components
+
+    # Create nested dictionary: {component: {atom_index: weight}}
+    atom_weights = {}
+
+    for component in common_components:
+        protein_values = np.asarray(protein_energy_differences[component], dtype=float)
+        ligand_values = np.asarray(ligand_energy_differences[component], dtype=float)
+
+        # Create atom index to weight mapping
+        component_weights = {}
+
+        # Add protein atom weights (indices 0 to n_protein_atoms-1)
+        for i, weight in enumerate(protein_values):
+            component_weights[i] = float(weight)
+
+        # Add ligand atom weights (indices n_protein_atoms to n_protein_atoms+n_ligand_atoms-1)
+        for i, weight in enumerate(ligand_values):
+            atom_index = n_protein_atoms + i
+            component_weights[atom_index] = float(weight)
+
+        atom_weights[component] = component_weights
+        logger.debug(f"Component '{component}': mapped {len(component_weights)} atoms (indices 0-{len(component_weights)-1})")
+
+    logger.debug(f"Successfully created atom weight mappings for {len(atom_weights)} components")
+    return atom_weights
+
 
 def compute_energy_differences(
     protein_components: Dict[str, np.ndarray],

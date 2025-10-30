@@ -4,6 +4,7 @@ SO3LR-SF Calculator Module
 This module provides the core calculator interface for energy calculations using SO3LR.
 """
 
+import logging
 import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, Any, Union
@@ -13,6 +14,8 @@ from mlff.md.calculator_sparse import mlffCalculatorSparse
 from .utils import validate_structure
 from .molecule_loader import load_ase_structure
 from .config import get_default_model_path
+
+logger = logging.getLogger(__name__)
 
 
 class So3lrSfCalculator:
@@ -84,7 +87,10 @@ class So3lrSfCalculator:
             RuntimeError: If calculator initialization fails
         """
         try:
-            import logging
+            logger.debug(f"Initializing SO3LR calculator with model path: {self.model_path}")
+            logger.debug(f"Calculator parameters: lr_cutoff={self.lr_cutoff}, "
+                        f"dispersion_damping={self.dispersion_energy_lr_cutoff_damping}, "
+                        f"output_per_atom={self.output_per_atom_energy_components}")
 
             # Temporarily suppress JAX/checkpoint/MLFF logging
             loggers_to_suppress = [
@@ -101,9 +107,9 @@ class So3lrSfCalculator:
             ]
 
             original_levels = {}
-            for logger in loggers_to_suppress:
-                original_levels[logger] = logger.level
-                logger.setLevel(logging.CRITICAL)  # Even more restrictive
+            for log in loggers_to_suppress:
+                original_levels[log] = log.level
+                log.setLevel(logging.CRITICAL)  # Even more restrictive
 
             try:
                 self._calculator = mlffCalculatorSparse.create_from_ckpt_dir(
@@ -118,9 +124,12 @@ class So3lrSfCalculator:
                 )
             finally:
                 # Restore original logging levels
-                for logger, level in original_levels.items():
-                    logger.setLevel(level)
+                for log, level in original_levels.items():
+                    log.setLevel(level)
+
+            logger.debug("SO3LR calculator initialized successfully")
         except Exception as e:
+            logger.debug(f"Calculator initialization failed: {e}")
             raise RuntimeError(f"Failed to initialize SO3LR calculator: {e}")
 
     def calculate_energy(self, atoms: Union[Atoms, str, Path]) -> float:
@@ -148,6 +157,7 @@ class So3lrSfCalculator:
             >>> print(f"Potential energy: {energy:.3f} eV")
         """
         if isinstance(atoms, (str, Path)):
+            logger.debug(f"Loading structure from file: {atoms}")
             atoms = load_ase_structure(atoms)[0]
 
         validate_structure(atoms)
@@ -157,8 +167,10 @@ class So3lrSfCalculator:
 
         # Set calculator and compute energy
         atoms.calc = self._calculator
+        logger.debug("Starting energy calculation...")
         try:
             energy = atoms.get_potential_energy()
+            logger.debug(f"Energy calculation completed: {energy:.6f} eV")
             return float(energy)
         except Exception as e:
             raise RuntimeError(f"Energy calculation failed: {e}")
@@ -189,12 +201,15 @@ class So3lrSfCalculator:
             ...         print(f"{comp_name}: total = {np.sum(values):.3f} eV")
         """
         if not self.output_per_atom_energy_components:
+            logger.debug("Per-atom energy components not enabled during initialization")
             raise ValueError(
                 "Per-atom energy components not enabled. "
                 "Initialize calculator with output_per_atom_energy_components=True"
             )
 
+        logger.debug("Retrieving per-atom energy components from calculator")
         if hasattr(self._calculator, 'get_per_atom_energy_components'):
             return self._calculator.get_per_atom_energy_components()
         else:
+            logger.debug("Calculator does not support per-atom energy components")
             return None

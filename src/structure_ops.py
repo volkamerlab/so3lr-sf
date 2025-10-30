@@ -13,11 +13,13 @@ from ase.optimize import FIRE, LBFGS
 from ase.neighborlist import neighbor_list
 from ase.constraints import FixAtoms
 
-from .utils import write_structure, write_opt_structure
+from .utils import write_structure, write_opt_structure, get_ligand_files
 from .molecule_loader import load_ase_structure, create_residue_atom_mapping, prepare_mda_universe
 from .calculator import So3lrSfCalculator
 from .interaction_energy import protein_ligand_interaction
 import logging
+
+logger = logging.getLogger(__name__)
 
 def trim_structure(
     protein_path: Union[str, Path],
@@ -56,14 +58,6 @@ def trim_structure(
     """
     protein_path = Path(protein_path)
     ligand_path = Path(ligand_path)
-    logger = logging.getLogger(__name__)
-
-    # Set output directory
-    if output_dir is None:
-        output_dir = protein_path.parent
-    else:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
 
     # Read structures
     protein = load_ase_structure(protein_path)[0]
@@ -90,7 +84,7 @@ def trim_structure(
         atoms_to_keep = _trim_by_atoms(protein_positions, ligand_positions, radius, logger)
         trimming_method = "atom"
     else:
-        raise ValueError(f"Unsupported protein file format: {protein_ext}")
+        raise ValueError(f"Unsupported protein file format for trimming: {protein_ext}")
 
     if len(atoms_to_keep) == 0:
         raise ValueError(f"No protein atoms found within {radius} Å of ligand")
@@ -98,14 +92,10 @@ def trim_structure(
     # Create trimmed protein
     trimmed_protein = protein[atoms_to_keep]
 
-    # Generate output filename with trimming method indicator
-    # Preserve original format if input is PDB, otherwise use XYZ
-    output_ext = protein_ext if protein_ext == '.pdb' else '.xyz'
-    trimmed_filename = f"{protein_path.stem}_trimmed_{radius}A_{trimming_method}{output_ext}"
-    trimmed_path = output_dir / trimmed_filename
+    trimmed_protein_path = protein_path.with_name(f"{protein_path.stem}_trimmed_{radius}A_{trimming_method}{protein_ext}")
 
     # Save trimmed protein
-    output_path = write_structure(trimmed_protein, trimmed_path)
+    output_path = write_structure(trimmed_protein, trimmed_protein_path)
 
     logger.info(f"Trimmed protein ({len(trimmed_protein)} atoms from {len(protein)} original atoms) saved to: {output_path}")
     logger.info(f"Trimming method: {trimming_method}-based")
@@ -159,22 +149,18 @@ def _trim_by_residues(protein_path: Path, protein_positions: np.ndarray, ligand_
         # Create MDAnalysis universe to get residue information
         universe = prepare_mda_universe(protein_path)
         residue_atom_mapping = create_residue_atom_mapping(universe)
-
+        logger.debug(f"Residue-atom mapping created with {len(residue_atom_mapping)} residues")
+        
         # First find individual atoms within radius
-        atoms_within_radius = set()
-        for i, prot_pos in enumerate(protein_positions):
-            distances = np.linalg.norm(ligand_positions - prot_pos, axis=1)
-            min_distance = np.min(distances)
-
-            if min_distance <= radius:
-                atoms_within_radius.add(i)
-
+        atoms_within_radius = _trim_by_atoms(protein_positions, ligand_positions, radius, logger)
+        
         # Then identify which residues these atoms belong to
         residues_to_keep = set()
         for residue_id, atom_indices in residue_atom_mapping.items():
             # Check if any atom from this residue is within radius
             if any(atom_idx in atoms_within_radius for atom_idx in atom_indices):
                 residues_to_keep.add(residue_id)
+        logger.info(f"Residue-based trimming: {len(residues_to_keep)} complete residues selected")
 
         # Finally, include ALL atoms from selected residues
         atoms_to_keep = []
@@ -183,9 +169,6 @@ def _trim_by_residues(protein_path: Path, protein_positions: np.ndarray, ligand_
 
         # Sort atom indices to maintain order
         atoms_to_keep = sorted(set(atoms_to_keep))
-
-        logger.info(f"Residue-based trimming: {len(residues_to_keep)} complete residues selected")
-        logger.info(f"Individual atoms within radius: {len(atoms_within_radius)}")
         logger.info(f"Total atoms after including complete residues: {len(atoms_to_keep)}")
 
         return atoms_to_keep
@@ -197,7 +180,6 @@ def _trim_by_residues(protein_path: Path, protein_positions: np.ndarray, ligand_
 
 def perform_trimming(protein_path, ligands_source, radius, trim_lig, output_dir, logger):
     """Handle protein trimming workflow."""
-    from .utils import get_ligand_files
 
     logger.info("=== TRIMMING PHASE ===")
 
@@ -206,7 +188,7 @@ def perform_trimming(protein_path, ligands_source, radius, trim_lig, output_dir,
         if not Path(trim_lig).exists():
             raise FileNotFoundError(f"Specified trim ligand not found: {trim_lig}")
         representative_ligand = trim_lig
-        logger.info(f"Using specified ligand for trimming: {representative_ligand}")
+        logger.info(f"Using the specified ligand for trimming: {representative_ligand}")
     else:
         ligand_files = get_ligand_files(ligands_source, output_dir)
         if not ligand_files:
@@ -334,7 +316,6 @@ def create_optimization_constraint(
     Returns:
         FixAtoms constraint object or None if no atoms to fix
     """
-    logger = logging.getLogger(__name__)
     n_prot = n_protein_atoms
     n_lig = len(complex_atoms) - n_protein_atoms
 
@@ -421,6 +402,7 @@ def optimize_structure(
     # Set output directory
     if output_path.is_file():
         # return the path if it's already a file
+        logger.info(f"Output path is already a file: {output_path}, skipping optimization.")
         return str(output_path), {
             'output_file': output_path,
             'existing_file': True,
@@ -435,6 +417,7 @@ def optimize_structure(
     # Create and apply constraint if opt_radius is provided
     constraint = None
     if opt_radius is not None and n_protein_atoms is not None:
+        logger.info(f"Applying optimization constraints with radius: {opt_radius} Å")
         constraint = create_optimization_constraint(atoms, n_protein_atoms, opt_radius, protein_path)
 
 
@@ -471,14 +454,14 @@ def optimize_structure(
         nsteps = opt.nsteps
     except Exception as e:
         optimization_error = str(e)
-        print(f"Warning: Optimization encountered issues: {e}")
-        print("Saving current structure anyway...")
+        logger.error(f"Optimization encountered issues: {e}")
+        logger.warning("Saving current structure anyway...")
 
     # Get final energy (even if optimization didn't converge)
     try:
         final_energy = atoms.get_potential_energy()
     except Exception as e:
-        print(f"Warning: Could not calculate final energy: {e}")
+        logger.warning(f"Could not calculate final energy: {e}")
         final_energy = initial_energy  # Use initial energy as fallback
 
     # Calculate structural changes
@@ -553,15 +536,15 @@ def optimize_structure(
 
     # Print status
     if converged:
-        print(f"Optimization converged in {nsteps} steps")
+        logger.info(f"Optimization converged in {nsteps} steps")
     else:
-        print(f"Optimization did not converge in {nsteps} steps (max: {steps})")
+        logger.info(f"Optimization did not converge in {nsteps} steps (max: {steps})")
 
     if optimization_error:
-        print(f"Optimization encountered issues: {optimization_error}")
+        logger.warning(f"Optimization encountered issues: {optimization_error}")
 
-    print(f"Energy change: {final_energy - initial_energy:.6f} eV")
-    print(f"Structure saved to: {output_path_str}")
+    logger.info(f"Energy change: {final_energy - initial_energy:.6f} eV")
+    logger.info(f"Structure saved to: {output_path_str}")
 
     return output_path_str, opt_info
 
@@ -616,7 +599,7 @@ def extract_ligands(
         output_file = write_structure(atoms, output_path)
         output_files.append(output_file)
 
-    print(f"Extracted {len(output_files)} structures to {output_dir}")
+    logger.info(f"Extracted {len(output_files)} structures to {output_dir}")
 
     return output_files
 

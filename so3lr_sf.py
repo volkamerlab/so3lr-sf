@@ -241,7 +241,7 @@ def main():
 
         # Optional: load ProLIF protein structure for explainability
         preloaded_protein_prolif = None
-        if args.exp_prot or args.exp_3d:
+        if args.exp_prot:
             preloaded_protein_prolif = load_molecule_to_prolif(working_protein_path, is_protein=True)
         # Step 3: Ligand processing
         logger.info("=== LIGAND PROCESSING PHASE ===")

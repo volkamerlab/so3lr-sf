@@ -145,7 +145,8 @@ results_steps_100_fmax0.05/
 - `--model-path PATH`: Path to SO3LR model parameters (auto-detected if not specified)
 
 ### Logging & Output
-- `-v, --verbose`: Enable detailed logging output
+- `-v, --verbose`: Enable detailed logging output (INFO level)
+- `--debug`: Enable debug level logging (includes verbose output and detailed debugging information)
 - `--opt-log`: Save optimization details to JSON file
 
 </details>
@@ -250,6 +251,15 @@ python so3lr_sf.py \
     --ligands ligand.sdf \
     --exp-prot \
     --verbose
+```
+
+### Example 6: Debug Mode for Troubleshooting
+```bash
+python so3lr_sf.py \
+    --protein protein.pdb \
+    --ligands ligand.sdf \
+    --debug \
+    --optimize
 ```
 
 </details>

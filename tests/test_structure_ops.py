@@ -268,7 +268,7 @@ class TestTrimStructure:
         ligand_path = water_files['xyz']
 
         # SDF format is not supported for protein input
-        with pytest.raises(ValueError, match="Unsupported protein file format: .sdf"):
+        with pytest.raises(ValueError, match="Unsupported protein file format for trimming: .sdf"):
             trim_structure(protein_path, ligand_path, radius=2.0, output_dir=temp_dir)
 
     @pytest.mark.unit
@@ -624,7 +624,7 @@ class TestTrimStructure:
         """Test perform_trimming when no ligand files are found."""
         from src.structure_ops import perform_trimming
 
-        with patch('src.utils.get_ligand_files', return_value=[]):
+        with patch('src.structure_ops.get_ligand_files', return_value=[]):
             with pytest.raises(ValueError) as exc_info:
                 perform_trimming(
                     protein_path=sample_xyz_file,
@@ -658,7 +658,7 @@ class TestTrimStructure:
 
             assert result == temp_dir / "trimmed_protein.xyz"
             mock_trim.assert_called_once_with(
-                sample_xyz_file, sample_sdf_file,
+                sample_xyz_file, str(sample_sdf_file),
                 radius=5.0, output_dir=temp_dir
             )
 

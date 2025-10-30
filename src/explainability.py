@@ -8,7 +8,7 @@ by calculating energy differences and generating molecular heatmaps.
 import io
 import logging
 from ase import Atoms
-from ase.io import read, write
+from ase.io import read
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -21,9 +21,10 @@ import prolif as plf
 
 logger = logging.getLogger(__name__)
 
-from .molecule_loader import load_molecule_to_prolif
+from .utils import write_structure
+from .molecule_loader import load_molecule_to_prolif, load_ase_structure
 from .explain_utils import (compute_protein_ligand_interactions, get_atom_mappings, create_colorbar, similarity_map_gen, get_interaction_color,
-                          add_interaction_summary, residue_weights_calculation)
+                          add_interaction_summary, residue_weights_calculation, atom_weights_calculation)
 from .visualizer import create_pymol_session
 
 
@@ -32,7 +33,7 @@ def _create_3d_energy_visualization(
     ligand_path: Union[str, Path],
     protein_energy_differences: Dict[str, np.ndarray],
     ligand_energy_differences: Dict[str, np.ndarray],
-    output_path: Optional[Union[str, Path]] = None
+    output_path: Union[str, Path] = None
 ) -> Optional[str]:
     """
     Create 3D PyMOL visualization for protein-ligand complex with energy mapping.
@@ -52,56 +53,41 @@ def _create_3d_energy_visualization(
 
         ligand_name = ligand_path.stem
         logger.info("Creating 3D PyMOL visualization with mapped weights...")
-    
-        # Combine protein and ligand energy differences
-        complex_energy_differences = {}
-        for comp_name, protein_values in protein_energy_differences.items():
-            if comp_name in ligand_energy_differences:
-                # Ensure both arrays are numpy arrays with consistent dtype
-                protein_array = np.asarray(protein_values, dtype=float)
-                ligand_array = np.asarray(ligand_energy_differences[comp_name], dtype=float)
 
-                complex_energy_differences[comp_name] = np.concatenate([
-                    protein_array,
-                    ligand_array
-                ]).tolist()
-            else:
-                logger.warning(f"Component '{comp_name}' not found in ligand energy differences")
+        # Load ligand atoms for proper mapping
+        ligand_atoms = load_ase_structure(ligand_path)[0]
 
-        if not complex_energy_differences:
-            logger.error("No matching energy components found between protein and ligand")
-            return None
+        # Calculate properly mapped atom weights for 3D visualization
+        atom_weights_mapped = atom_weights_calculation(
+            protein_energy_differences=protein_energy_differences,
+            ligand_energy_differences=ligand_energy_differences,
+            protein_atoms=protein_atoms,
+            ligand_atoms=ligand_atoms
+        )
 
-        logger.debug(f"Complex energy components: {list(complex_energy_differences.keys())}")
+        logger.debug(f"Complex energy components: {list(atom_weights_mapped.keys())}")
 
-        # Set default output path if None provided
-        if output_path is None:
-            output_path = ligand_path.parent / "pl_3d_exp" / f"{ligand_name}_3d_visualization.pml"
-        else:
-            output_path = Path(output_path)
 
-        # Create temporary complex structure file
-        temp_complex_path = output_path.parent / f"temp_complex_{ligand_name}.pdb"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
+        # Create complex structure file in pdb format
+        complex_path = output_path.parent / f"complex_{ligand_name}.pdb"
         # Load ligand and combine with protein
         ligand_atoms = read(str(ligand_path))
         complex_atoms = protein_atoms + ligand_atoms
-        write(str(temp_complex_path), complex_atoms, format='proteindatabank')
+             
+        write_structure(str(complex_path), complex_atoms)
+        if not complex_path.exists():
+            raise FileNotFoundError(f"Failed to create complex file: {complex_path}")
+
+        # Calculate center of mass for visualization centering
+        center_of_mass = np.mean(complex_atoms.get_positions(), axis=0)   
 
         # Generate PyMOL visualization
         viz_file = create_pymol_session(
-            protein_path=temp_complex_path,
-            protein_energy_differences=complex_energy_differences,
+            complex_path=complex_path,
+            atom_weights_mapped=atom_weights_mapped,
             output_path=output_path,
-            session_name=f"complex_{ligand_name}_energy"
+            center_of_mass=center_of_mass
         )
-
-        # Clean up temporary file
-        try:
-            temp_complex_path.unlink(missing_ok=True)
-        except Exception as cleanup_err:
-            logger.warning(f"Failed to clean up temporary file {temp_complex_path}: {cleanup_err}")
 
         return viz_file
 
