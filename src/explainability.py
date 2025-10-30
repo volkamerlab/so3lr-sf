@@ -74,7 +74,7 @@ def _create_3d_energy_visualization(
         ligand_atoms = read(str(ligand_path))
         complex_atoms = protein_atoms + ligand_atoms
              
-        write_structure(str(complex_path), complex_atoms)
+        write_structure(complex_atoms, str(complex_path))
         if not complex_path.exists():
             raise FileNotFoundError(f"Failed to create complex file: {complex_path}")
 
@@ -296,9 +296,6 @@ def generate_ligand_heatmap(
         ax.imshow(img)
         ax.axis("off")
 
-        # Add component title
-        ax.set_title(component, fontsize=14, fontweight='bold', pad=20)
-
         # Add colorbar
         create_colorbar(fig, ax, global_max, component, weights)
 
@@ -413,9 +410,6 @@ def generate_protein_interaction_heatmap(
         ax.imshow(ligand_heatmap_img)
         ax.axis("off")
 
-        # Add component title
-        ax.set_title(component, fontsize=14, fontweight='bold', pad=20)
-
         # Use extended_weights which includes both ligand and protein residue contributions
         create_colorbar(fig, ax, global_max, component, np.array(extended_weights))
 
@@ -479,7 +473,7 @@ def generate_energy_heatmap(
         plt.Figure: Generated matplotlib figure with optional protein residue information
     """
     ligand_path = Path(ligand_path)
-    logger.info(f"Generating heatmap for ligand: {ligand_path}")
+    logger.info(f"Generating heatmap for : {ligand_path}")
     # Read ligand molecule for visualization using universal function
     mol = load_molecule_to_prolif(ligand_path)
     # Use enhanced visualizer if protein data is provided (protein mode)

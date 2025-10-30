@@ -327,15 +327,16 @@ def protein_ligand_interaction(
         ligand_path: Path to ligand structure file
         calc: Initialized calculator instance
         complex_path: Optional path to pre-built complex structure
-        explainability: If True, calculate per-atom energy differences and generate heatmap
         eda: If True, save individual energy component totals separately
         verbose: Enable verbose logging
         preloaded_protein_prolif: Optional preloaded protein ProLIF data for enhanced explainability
+        exp_outputs: Optional tuple of paths for explainability outputs:
+            (ligand_heatmap_path, pl_2D_heatmap_path, pl_3D_session_path)
 
     Returns:
         float or tuple:
-            - If explainability=False and eda=False: Just the interaction energy in eV
-            - If explainability=True or eda=True: (interaction_energy, analysis_dict)
+            - If None of output path for explainability and eda=False: Just the interaction energy in eV
+            - If any of output path for explainability or eda=True: (interaction_energy, analysis_dict)
 
     Example:
         >>> calc = So3lrSfCalculator()
@@ -346,8 +347,7 @@ def protein_ligand_interaction(
         >>> # With explainability and heatmap
         >>> interaction, analysis = protein_ligand_interaction(
         ...     "protein.pdb", "ligand.sdf", calc,
-        ...     explainability=True,
-        ...     exp_lig_heatmap="interaction_heatmap.png",
+        ...     exp_outputs=("ligand_heatmap.png", None, None),
         ...     verbose=True
         ... )
         >>> print(f"Binding energy: {analysis['binding_energy_kcal_mol']:.1f} kcal/mol")
@@ -362,7 +362,7 @@ def protein_ligand_interaction(
     logger.info(f"Ligand: {ligand_path}")
     logger.debug(f"Using calculator with model: {calc.model_path}")
 
-    exp_mode = any(exp_outputs)
+    exp_mode = any(exp_outputs) if exp_outputs else False
 
     # Check if per-atom components are needed for explainability or EDA
     if (exp_mode or eda) and not calc.output_per_atom_energy_components:
