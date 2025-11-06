@@ -55,8 +55,8 @@ def get_optimizer(atoms: Atoms, optimizer: str):
         return ase.optimize.GPMin(atoms, logfile=None)
     elif optimizer_upper == 'MDMIN':
         return ase.optimize.MDMin(atoms, logfile=None)
-    elif optimizer_upper == 'CELLAWAREBFGS':
-        return ase.optimize.CellAwareBFGS(atoms, logfile=None)
+    # elif optimizer_upper == 'CELLAWAREBFGS':
+    #     return ase.optimize.CellAwareBFGS(atoms, logfile=None)
     elif optimizer_upper == 'ODE12R':
         return ase.optimize.ODE12r(atoms, logfile=None)
     elif optimizer_upper == 'GOODOLDQUASINEWTON':
