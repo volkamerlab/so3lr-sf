@@ -83,6 +83,31 @@ poetry run pytest
 poetry run python so3lr_sf.py --protein tests/test_data/alanine.xyz --ligands tests/test_data/water.sdf
 ```
 
+### Docker Installation
+
+For containerized deployment, you can either pull the pre-built image or build from source:
+
+#### Option 1: Pull Pre-built Image
+```bash
+# Pull the latest image
+docker pull hamzaibrahim21/so3lr-sf:latest
+
+# Run container
+docker run --rm -it hamzaibrahim21/so3lr-sf:latest
+
+# For GPU support (requires NVIDIA Container Toolkit)
+docker run --gpus all --rm -it hamzaibrahim21/so3lr-sf:latest
+```
+
+#### Option 2: Build from Source
+```bash
+# Build the Docker image
+docker build -f Docker/Dockerfile -t so3lr-sf:latest .
+
+# Run tests in container
+docker run --rm so3lr-sf:latest pytest tests/ --verbose
+```
+
 </details>
 
 <details>

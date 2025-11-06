@@ -24,7 +24,7 @@ example*
 debug*
 
 tests/test_data/*
-Docker/*
+Docker/.docker*
 calculate*
 
 trial*
