@@ -24,7 +24,8 @@ from tqdm import tqdm
 
 from src.calculator import So3lrSfCalculator
 from src.utils import setup_logging
-from src.structure_ops import perform_trimming, optimize_protein, process_single_ligand
+from src.optimization import optimize_protein, process_single_ligand
+from src.trim import perform_trimming
 from src.utils import setup_output_directory, save_results, get_ligand_files
 from src.molecule_loader import load_molecule_to_prolif
 
@@ -39,13 +40,13 @@ Examples:
   python so3lr_sf.py protein.pdb ligand.sdf
 
   # Trim protein around ligand (5Å radius)
-  python so3lr_sf.py protein.pdb ligand.sdf --trim --radius 5.0
+  python so3lr_sf.py protein.pdb ligand.sdf --trim 5.0
 
   # Optimize structures before calculation
   python so3lr_sf.py protein.pdb ligand.sdf --optimize
 
   # Full workflow with explainability
-  python so3lr_sf.py protein.pdb ligands.sdf --trim --optimize --exp-lig
+  python so3lr_sf.py protein.pdb ligands.sdf --trim 10.0 --optimize --exp-lig
 
   # 3D protein energy visualization
   python so3lr_sf.py protein.pdb ligands.sdf --exp-prot --exp-3d
@@ -68,11 +69,6 @@ Examples:
     )
 
     # Main workflow options
-    parser.add_argument(
-        "--trim",
-        action="store_true",
-        help="Trim protein around ligand(s) before calculation"
-    )
     parser.add_argument(
         "--optimize",
         action="store_true",
@@ -101,10 +97,9 @@ Examples:
 
     # Trimming parameters
     parser.add_argument(
-        "--radius",
+        "--trim",
         type=float,
-        default=10.0,
-        help="Radius in Angstroms for protein trimming (default: 10.0)"
+        help="Trim protein around ligand(s) with specified radius in Angstroms"
     )
     parser.add_argument(
         "--trim-lig",
@@ -115,7 +110,8 @@ Examples:
     # Optimization parameters
     parser.add_argument(
         "--optimizer",
-        choices=["FIRE", "LBFGS"],
+        choices=["FIRE", "FIRE2", "LBFGS", "BFGS", "BFGSLineSearch", "LBFGSLineSearch",
+                 "GPMin", "MDMin", "ODE12r", "GoodOldQuasiNewton", "QuasiNewton"],
         default="FIRE",
         help="Optimization algorithm (default: FIRE)"
     )
@@ -134,9 +130,16 @@ Examples:
     parser.add_argument(
         "--opt-radius",
         type=float,
-        help="Optimization radius in Angstroms - only atoms within this distance of ligand will be optimized"
+        default=4.0,
+        help="Optimization radius in Angstroms - only atoms within this distance of ligand will be optimized (default: 4.0)"
     )
-    
+    parser.add_argument(
+        "--optimization-mode",
+        choices=["free", "constrained"],
+        default="free",
+        help="Optimization strategy: 'free' (optimize protein once, ligand individually, then constrained complex) or 'constrained' (optimize complex only with constraints). Default: free"
+    )
+
     # Model parameters
     parser.add_argument(
         "--model-path",
@@ -205,9 +208,9 @@ def main():
 
         # Setup output directory and subdirectories
         output_dir = setup_output_directory(
-            protein_path, optimize=args.optimize, trim=args.trim,
+            protein_path, optimize=args.optimize, trim_radius=args.trim,
             exp_lig=args.exp_lig, exp_prot=args.exp_prot, exp_3d=args.exp_3d,
-            steps=args.steps, fmax=args.fmax, radius=args.radius
+            steps=args.steps, fmax=args.fmax
         )
         logger.info(f"Output directory: {output_dir}")
         logger.debug(f"Created output subdirectories for workflow modes")
@@ -226,9 +229,9 @@ def main():
 
         # Step 1: Trimming phase
         working_protein_path = str(protein_path)
-        if args.trim:
+        if args.trim is not None:
             working_protein_path = perform_trimming(
-                protein_path, args.ligands, args.radius, args.trim_lig, output_dir, logger
+                protein_path, args.ligands, args.trim, args.trim_lig, output_dir, logger
             )
 
         # Step 2: Protein optimization

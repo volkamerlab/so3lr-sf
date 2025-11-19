@@ -498,8 +498,7 @@ class TestSetupOutputDirectory:
 
         result = setup_output_directory(
             protein_path,
-            trim=True,
-            radius=5.0
+            trim_radius=5.0
         )
 
         expected_dir = temp_dir / "results_trim_5.0A"
@@ -536,11 +535,10 @@ class TestSetupOutputDirectory:
         result = setup_output_directory(
             protein_path,
             optimize=True,
-            trim=True,
+            trim_radius=3.0,
             exp_lig=True,
             steps=500,
-            fmax=0.05,
-            radius=3.0
+            fmax=0.05
         )
 
         expected_dir = temp_dir / "results_steps_500_fmax0.05_trim_3.0A"
@@ -564,7 +562,7 @@ class TestGetLigandFilesExtended:
         fake_sdf = temp_dir / "fake_multi.sdf"
         fake_sdf.write_text("invalid multi sdf content")
 
-        with patch('src.structure_ops.extract_ligands', side_effect=Exception("Extract failed")):
+        with patch('src.molecule_loader.extract_ligands', side_effect=Exception("Extract failed")):
             result = get_ligand_files(str(fake_sdf), temp_dir)
 
             # Should fallback to treating as single ligand

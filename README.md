@@ -94,24 +94,31 @@ src/
 ├── calculator.py                      # SO3LR calculator implementation
 ├── config.py                          # Configuration management and model path discovery
 ├── interaction_energy.py              # Main energy calculation functions
-├── structure_ops.py                   # Structure manipulation and optimization
+├── optimization.py                    # Structure optimization through constraint or free optimization
+├── constraint.py                      # Handle optimization constraints either by-atom or by-residue
+├── trim.py                            # Trim protein structure either by-atom or by-residue
 ├── explainability.py                  # Energy-based explainability analysis and visualization
 ├── explain_utils.py                   # Utility functions for explainability analysis
 ├── molecule_loader.py                 # Molecule loading and file format handling
 ├── utils.py                           # General utility functions and I/O operations
+├── visualizer.py                      # 3D Protein-Ligand Energy Visualizer for PyMOL
 └── __init__.py                        # Package interface
 ```
-### Output directory Structure
+### Output Directory Structure
 ```
 results_steps_100_fmax0.05/
-├── results_summary.json           # Main results file
-├── optimization_log.json          # Optimization details (if --opt-log)
-├── individual_ligands/             # Extracted ligands (for multi-SDF)
-├── opt_ligand/                     # Optimized ligand structures
-├── opt_complexes/                  # Optimized complex structures
-└── ligand_exp/                     # Explainability heatmaps
-    ├── ligand_001_heatmap.png
-    └── ligand_002_heatmap.png
+├── results_summary.json                    # Main results file
+├── optimization_log.json                   # Optimization details (if --opt-log)
+├── individual_ligands/                      # Extracted ligands (for multi-SDF)
+├── ligand_exp/                             # Explainability heatmaps
+│   ├── ligand_001_heatmap.png
+│   └── ligand_002_heatmap.png
+└── optimization_outputs/                   # Optimization mode-specific outputs
+    ├── free_opt_protein/                   # Free mode: optimized protein (once)
+    ├── free_opt_ligands/                   # Free mode: individually optimized ligands
+    ├── free_opt_complexes/                 # Free mode: constrained optimized complexes
+    ├── constrained_opt_complexes/          # Constrained mode: optimized complexes
+    └── constrained_opt_components/         # Constrained mode: extracted components
 ```
 
 </details>
@@ -125,21 +132,23 @@ results_steps_100_fmax0.05/
 - `--ligands`: Path to ligand file, directory, or multi-SDF file
 
 ### Workflow Options
-- `--trim`: Trim protein around ligand(s) before calculation
+- `--trim FLOAT`: Trim protein around ligand(s) with specified radius in Angstroms
 - `--optimize`: Optimize structures before energy calculation
 - `--exp-lig`: Generate explainability analysis and heatmaps
 - `--exp-prot`: Generate protein explainability with protein-ligand interaction analysis and interacting residue coloring depending on their energy contribution
 - `--exp-3d`: Generate 3D PyMOL visualization of protein energy components
 
 ### Trimming Parameters
-- `--radius FLOAT`: Radius in Angstroms for protein trimming (default: 10.0)
 - `--trim-lig FILE`: Specific ligand file to use for trimming
 
 ### Optimization Parameters
 - `--optimizer {FIRE,FIRE2,LBFGS,BFGS,BFGSLineSearch,LBFGSLineSearch,GPMin,MDMin,ODE12r,GoodOldQuasiNewton,QuasiNewton}`: Optimization algorithm (default: FIRE)
 - `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
 - `--steps INT`: Maximum optimization steps (default: 100)
-- `--opt-radius FLOAT`: Optimization radius around ligand
+- `--opt-radius FLOAT`: Optimization radius around ligand for constrained optimization (default: 4.0)
+- `--optimization-mode {free,constrained}`: Optimization strategy (default: free)
+  - **free**: First optimize the entire protein structure, then the ligand separately, followed by local optimization within the specified radius around ligand atoms
+  - **constrained**: Perform optimization only within the specified radius around ligand atoms, then extract the optimized structures for energy evaluation
 
 ### Model Parameters
 - `--model-path PATH`: Path to SO3LR model parameters (auto-detected if not specified)
@@ -166,7 +175,7 @@ python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf --optimize
 
 # Full workflow with explainability
 python so3lr_sf.py --protein protein.pdb --ligands ligands.sdf \
-    --trim --optimize --exp-lig --verbose
+  --trim 10.0 --optimize --exp-lig --verbose
 ```
 
 ### Python API
@@ -211,18 +220,18 @@ python so3lr_sf.py \
 python so3lr_sf.py \
     --protein target.pdb \
     --ligands ligand_library.sdf \
-    --trim \
-    --radius 10.0 \
+    --trim 10.0 \
     --trim-lig ref_lig.sdf \
     --verbose
 ```
 
-### Example 3: Optimized Workflow
+### Example 3: Free Optimization (Default)
 ```bash
 python so3lr_sf.py \
     --protein protein.pdb \
     --ligands ligands.sdf \
     --optimize \
+    --optimization-mode free \
     --optimizer FIRE \
     --fmax 0.05 \
     --steps 100 \
@@ -230,13 +239,26 @@ python so3lr_sf.py \
     --verbose
 ```
 
-### Example 4: Full Analysis Pipeline
+### Example 4: Constrained Optimization
+```bash
+python so3lr_sf.py \
+    --protein protein.pdb \
+    --ligands ligands.sdf \
+    --optimize \
+    --optimization-mode constrained \
+    --optimizer FIRE \
+    --fmax 0.05 \
+    --steps 100 \
+    --opt-radius 4.0 \
+    --verbose
+```
+
+### Example 5: Full Analysis Pipeline
 ```bash
 python so3lr_sf.py \
     --protein protein.pdb \
     --ligands multi_ligands.sdf \
-    --trim \
-    --radius 8.0 \
+    --trim 8.0 \
     --optimize \
     --opt-radius 4.0 \
     --exp-lig \
@@ -244,7 +266,7 @@ python so3lr_sf.py \
     --verbose
 ```
 
-### Example 5: Protein-Ligand Interaction Analysis
+### Example 6: Protein-Ligand Interaction Analysis
 ```bash
 python so3lr_sf.py \
     --protein protein.pdb \
@@ -253,7 +275,7 @@ python so3lr_sf.py \
     --verbose
 ```
 
-### Example 6: Debug Mode for Troubleshooting
+### Example 7: Debug Mode for Troubleshooting
 ```bash
 python so3lr_sf.py \
     --protein protein.pdb \
