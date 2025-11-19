@@ -325,8 +325,6 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
 
         logger.info(f"Optimization log saved: {opt_log_file}")
 
-
-def setup_logging(verbose: bool = False, debug: bool = False):
 def setup_logging(verbose: bool = False, debug: bool = False):
     """
     Setup logging configuration.
@@ -349,8 +347,6 @@ def setup_logging(verbose: bool = False, debug: bool = False):
         force=True
     )
 
-    # Set our application loggers based on debug/verbose flags
-    if debug or verbose:
     # Set our application loggers based on debug/verbose flags
     if debug or verbose:
         our_loggers = [
