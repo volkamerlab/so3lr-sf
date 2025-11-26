@@ -350,10 +350,6 @@ def create_pymol_session(complex_path: Union[str, Path],
             f.write(f"# Load structure for {component} component\n")
             f.write(f"load {complex_path.name}, {structure_name}\n")
 
-            # Position structures side by side
-            x_offset = i * 70  # 50 Å separation
-            f.write(f"translate [{x_offset}, 0, 0], {structure_name}\n")
-
             # Set basic representation for protein-ligand complex
             f.write(f"# Hide everything first\n")
             f.write(f"hide everything, {structure_name}\n")
@@ -365,11 +361,6 @@ def create_pymol_session(complex_path: Union[str, Path],
             # Show sticks for ligand (assuming ligand is organic/small molecule)
             f.write(f"show sticks, {structure_name} and organic\n")
             f.write(f"color gray60, {structure_name} and organic\n")
-
-            # Note: Sticks for contributing atoms will be set after energy analysis
-
-            # Add energy component title above the structure
-            add_component_title(f, structure_name, component, center_of_mass, x_offset)
 
             # Set all atoms to gray then apply gradient energy-based coloring only to atoms within 10 Å of ligand
             f.write(f"# Gradient energy-based coloring for {component} component\n")
@@ -390,10 +381,17 @@ def create_pymol_session(complex_path: Union[str, Path],
                 f.write(f"# Show sticks for whole residues containing contributing atoms\n")
                 f.write(f"show sticks, {structure_name} and polymer and (byres (id {contributing_ids}))\n")
 
-            # Add protein-ligand interaction detection and visualization
-            add_interaction_detection(f, structure_name)
+            # Delete the near_ligand selection to clean up
+            f.write(f"delete near_ligand_{structure_name}\n")
 
             f.write("\n\n")
+
+        # Add protein-ligand interaction using first component structure
+        structure_name = f"protein_total"
+        f.write("# Protein-ligand interaction detection (shared across all energy components)\n")
+        add_interaction_detection(f, structure_name='protein_total')
+        
+        f.write("\n")
 
         # Final setup
         f.write("# Final visualization setup\n")

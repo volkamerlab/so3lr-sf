@@ -329,9 +329,8 @@ class TestCreatePymolSession:
             assert "load test.pdb, protein_mlff" in content
             assert "load test.pdb, protein_electrostatics" in content
 
-            # Check structure positioning (side by side)
-            assert "translate [0, 0, 0], protein_mlff" in content
-            assert "translate [70, 0, 0], protein_electrostatics" in content
+            # Check structure positioning (overlapping - no translations)
+            assert "translate [" not in content
 
     def test_create_pymol_session_protein_ligand_styling(self):
         """Test that protein and ligand styling commands are generated."""
@@ -382,13 +381,16 @@ class TestCreatePymolSession:
             assert "protein_zbl" in content
             assert "protein_dispersion" in content
 
-            # Check component titles are added
-            assert "pseudoatom title_protein_mlff" in content
-            assert "pseudoatom title_protein_zbl" in content
-            assert "pseudoatom title_protein_dispersion" in content
+            # Check that structures are positioned at same location (no translation)
+            assert "translate [" not in content
 
-            # Check interaction detection is called for each
-            assert content.count("# Detect and visualize interactions") >= 3
+            # Check interaction detection is called only once (not for each component)
+            assert content.count("# Detect and visualize interactions") == 1
+
+            # Check that near_ligand selections are cleaned up
+            assert "delete near_ligand_protein_mlff" in content
+            assert "delete near_ligand_protein_zbl" in content
+            assert "delete near_ligand_protein_dispersion" in content
 
     def test_create_pymol_session_final_setup(self):
         """Test that final visualization setup commands are included."""
@@ -504,7 +506,6 @@ HETATM    5  O1  LIG B   1      14.567  19.234   8.456  1.00 20.00           O
                 "load complex.pdb",
                 "show cartoon",
                 "show sticks",
-                "pseudoatom title_",
                 "set_color red_",
                 "set_color blue_",
                 "select hbonds_",
@@ -522,19 +523,16 @@ HETATM    5  O1  LIG B   1      14.567  19.234   8.456  1.00 20.00           O
             for component in atom_weights.keys():
                 structure_name = f"protein_{component.lower()}"
                 assert structure_name in content
-                assert f"pseudoatom title_{structure_name}" in content
 
-            # Verify side-by-side positioning
-            expected_positions = [
-                "translate [0, 0, 0], protein_mlff",
-                "translate [70, 0, 0], protein_electrostatics",
-                "translate [140, 0, 0], protein_zbl",
-                "translate [210, 0, 0], protein_dispersion",
-                "translate [280, 0, 0], protein_total"
-            ]
+            # Verify overlapping positioning (no translations)
+            assert "translate [" not in content
 
-            for position_cmd in expected_positions:
-                assert position_cmd in content
+            # Verify interaction detection is called only once
+            assert content.count("# Detect and visualize interactions") == 1
+
+            # Verify near_ligand selections are cleaned up
+            assert "delete near_ligand_protein_mlff" in content
+            assert "delete near_ligand_protein_electrostatics" in content
 
             # Verify session file path
             session_file = output_file.with_suffix(".pse")
@@ -556,6 +554,6 @@ HETATM    5  O1  LIG B   1      14.567  19.234   8.456  1.00 20.00           O
             content = Path(result).read_text()
 
             # Should have single structure with no translation
-            assert "translate [0, 0, 0], protein_total" in content
+            assert "translate [" not in content
             assert "protein_total" in content
             assert "protein_mlff" not in content  # No other components

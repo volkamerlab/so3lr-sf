@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from src.calculator import So3lrSfCalculator
 from src.utils import setup_logging
-from src.optimization import optimize_protein, process_single_ligand
+from src.optimization import process_single_ligand
 from src.trim import perform_trimming
 from src.utils import setup_output_directory, save_results, get_ligand_files
 from src.molecule_loader import load_molecule_to_prolif
