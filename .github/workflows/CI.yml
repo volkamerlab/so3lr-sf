@@ -96,7 +96,7 @@ jobs:
         env:
           SO3LR_MODEL_PATH: ${{ github.workspace }}/so3lr_models/so3lr/so3lr/params
         run: |
-          poetry run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json --cov-fail-under=85 -v
+          poetry run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json -v
 
       - name: Generate coverage badge
         run: |

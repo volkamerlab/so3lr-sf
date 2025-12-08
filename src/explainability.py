@@ -66,30 +66,46 @@ def _create_3d_energy_visualization(
         )
 
         logger.debug(f"Complex energy components: {list(atom_weights_mapped.keys())}")
-
-
+        def concat_complex(protein: Atoms, ligand: Atoms, 
+                        resname: str = 'LIG', chain: str = 'L') -> Atoms:
+            """Concatenate protein and ligand, preserving PDB residue info."""
+            n_lig = len(ligand)
+            
+            # Add matching arrays to ligand before concatenation
+            if 'residuenames' in protein.arrays:
+                ligand.set_array('residuenames', np.array([resname] * n_lig))
+            
+            if 'residuenumbers' in protein.arrays:
+                max_resnum = protein.arrays['residuenumbers'].max()
+                ligand.set_array('residuenumbers', np.array([max_resnum + 1] * n_lig))
+            
+            if 'chainids' in protein.arrays:
+                ligand.set_array('chainids', np.array([chain] * n_lig))
+            
+            return protein + ligand
         # Create complex structure file in pdb format
         complex_path = output_path.parent / f"complex_{ligand_name}.pdb"
         # Load ligand and combine with protein
-        ligand_atoms = read(str(ligand_path))
-        complex_atoms = protein_atoms + ligand_atoms
-             
-        write_structure(complex_atoms, str(complex_path))
+        ligand_atoms = load_ase_structure(ligand_path)[0]
+
+        complex_atoms = concat_complex(protein_atoms, ligand_atoms)
+        from ase.io import write
+        write(complex_path, complex_atoms, format='proteindatabank')
+        complex_path = output_path.parent / f"complex2_{ligand_name}.pdb"
+
+        write_structure(complex_atoms, complex_path)
         if not complex_path.exists():
             raise FileNotFoundError(f"Failed to create complex file: {complex_path}")
 
-        # Calculate center of mass for visualization centering
-        center_of_mass = np.mean(complex_atoms.get_positions(), axis=0)   
-
         # Generate PyMOL visualization
-        viz_file = create_pymol_session(
+        pml_file = create_pymol_session(
             complex_path=complex_path,
             atom_weights_mapped=atom_weights_mapped,
             output_path=output_path,
-            center_of_mass=center_of_mass
+            center_of_mass=True,
         )
 
-        return viz_file
+        return pml_file
 
     except Exception as e:
         logger.error(f"Failed to create 3D visualization: {e}")
@@ -131,6 +147,77 @@ def _group_interactions_by_residue(
     return residue_interactions
 
 
+def _find_non_overlapping_position(
+    target_x: float,
+    target_y: float,
+    existing_positions: List[Tuple[float, float]],
+    conf,
+    original_atom_count: int,
+    min_distance: float = 2.5
+) -> Tuple[float, float]:
+    """
+    Find a position near the target that doesn't overlap with existing positions or ligand atoms.
+    Uses a spiral search pattern to find the best available position.
+    """
+    import math
+
+    # Pre-compute ligand atom positions for faster access
+    if not hasattr(_find_non_overlapping_position, '_ligand_cache'):
+        _find_non_overlapping_position._ligand_cache = {}
+
+    cache_key = id(conf)
+    if cache_key not in _find_non_overlapping_position._ligand_cache:
+        ligand_positions = []
+        for atom_idx in range(original_atom_count):
+            pos = conf.GetAtomPosition(atom_idx)
+            ligand_positions.append((pos.x, pos.y))
+        _find_non_overlapping_position._ligand_cache[cache_key] = ligand_positions
+
+    ligand_positions = _find_non_overlapping_position._ligand_cache[cache_key]
+    min_distance_sq = min_distance * min_distance  # Use squared distance to avoid sqrt
+
+    def check_collision(x, y):
+        # Check collision with existing pseudo atoms (squared distance)
+        for ex_x, ex_y in existing_positions:
+            dx, dy = x - ex_x, y - ex_y
+            if dx*dx + dy*dy < min_distance_sq:
+                return True
+
+        # Check collision with cached ligand atoms (squared distance)
+        for lig_x, lig_y in ligand_positions:
+            dx, dy = x - lig_x, y - lig_y
+            if dx*dx + dy*dy < min_distance_sq:
+                return True
+
+        return False
+
+    # Try the target position first
+    if not check_collision(target_x, target_y):
+        return target_x, target_y
+
+    max_radius = 6.0
+    step_size = 0.3  # Larger step size
+    angle_step = math.pi / 4 # 45 degrees - fewer angles
+
+    radius = step_size
+    while radius <= max_radius:
+        angle = 0
+        while angle < 2 * math.pi:
+            test_x = target_x + radius * math.cos(angle)
+            test_y = target_y + radius * math.sin(angle)
+
+            if not check_collision(test_x, test_y):
+                return test_x, test_y
+
+            angle += angle_step
+        radius += step_size
+
+    # Final fallback: place at a guaranteed free position
+    fallback_x = target_x + max_radius + 2.0
+    fallback_y = target_y + max_radius + 2.0
+    return fallback_x, fallback_y
+
+
 def _augment_molecule_with_residues(
     rdkit_mol: Chem.Mol,
     residue_interactions: Dict[str, List[Dict[str, Any]]],
@@ -140,13 +227,23 @@ def _augment_molecule_with_residues(
 ) -> Tuple[Chem.RWMol, List[float], List[int], Dict[int, Tuple[float, float, float]]]:
     """
     Attach residue pseudo-atoms and highlight bonds to the ligand copy.
+    Preserves original ligand geometry by computing 2D coords first, then positioning pseudo atoms.
     """
+    # First, compute 2D coordinates for the original ligand to fix its geometry
+    rdDepictor.Compute2DCoords(rdkit_mol, bondLength=3.0, forceRDKit=True)
+
     lig_with_interactions = Chem.RWMol(rdkit_mol)
     highlight_bonds: List[int] = []
     highlight_bond_colors: Dict[int, Tuple[float, float, float]] = {}
     seen_bonds: set[int] = set()
     extended_weights = [float(weight) for weight in base_weights]
     original_atom_count = rdkit_mol.GetNumAtoms()
+
+    # Get conformer to access and set coordinates
+    conf = lig_with_interactions.GetConformer()
+
+    # Track positions of placed pseudo atoms to avoid overlaps
+    placed_pseudo_positions = []
 
     for residue, interactions in residue_interactions.items():
         residue_atom = Chem.Atom(0)
@@ -158,6 +255,39 @@ def _augment_molecule_with_residues(
             component_energy = float(residue_weights[residue].get(component, 0.0))
         extended_weights.append(component_energy)
 
+        # Calculate optimal position for pseudo atom based on connected ligand atoms
+        connected_ligand_atoms = set()
+        for interaction in interactions:
+            ligand_atoms = interaction.get("ligand_atoms", [])
+            for atom_idx in ligand_atoms:
+                if atom_idx < original_atom_count:
+                    connected_ligand_atoms.add(atom_idx)
+
+        # Position pseudo atom near the center of connected ligand atoms
+        if connected_ligand_atoms:
+            # Calculate centroid of connected atoms
+            x_sum = y_sum = 0.0
+            for atom_idx in connected_ligand_atoms:
+                pos = conf.GetAtomPosition(atom_idx)
+                x_sum += pos.x
+                y_sum += pos.y
+
+            centroid_x = x_sum / len(connected_ligand_atoms)
+            centroid_y = y_sum / len(connected_ligand_atoms)
+
+            # Find a non-overlapping position using spiral placement
+            pseudo_x, pseudo_y = _find_non_overlapping_position(
+                centroid_x, centroid_y, placed_pseudo_positions, conf, original_atom_count
+            )
+
+            # Record this position to avoid future overlaps
+            placed_pseudo_positions.append((pseudo_x, pseudo_y))
+
+            # Set position for the pseudo atom
+            from rdkit.Geometry import Point3D
+            conf.SetAtomPosition(residue_idx, Point3D(pseudo_x, pseudo_y, 0.0))
+
+        # Create bonds to interacting ligand atoms
         for interaction in interactions:
             ligand_atoms = interaction.get("ligand_atoms", [])
             if not ligand_atoms:
@@ -219,14 +349,15 @@ def _draw_interaction_map(
 ) -> np.ndarray:
     """
     Render the augmented molecule with RDKit's 2D drawer.
+    Assumes coordinates are already properly set and does not recompute them.
     """
-    rdDepictor.Compute2DCoords(molecule, bondLength=3.0, forceRDKit=True)
+    # Do NOT recompute coordinates - they are already set properly in _augment_molecule_with_residues
     drawer = rdMolDraw2D.MolDraw2DCairo(2400, 2400)
     draw_options = drawer.drawOptions()
     draw_options.circleAtoms = True
     draw_options.fillHighlights = True
     draw_options.continuousHighlight = False
-    draw_options.highlightRadius = 0.5
+    draw_options.highlightRadius = 0.8
     # Scale up line width and font sizes proportionally for higher resolution
     draw_options.bondLineWidth = 6
     draw_options.minFontSize = 28
@@ -487,11 +618,24 @@ def generate_energy_heatmap(
             output_path=output_paths[-1]
         )
 
-    if preloaded_protein_prolif is not None:         
+    # Generate ligand heatmap if requested or as fallback
+    ligand_fig = None
+    if output_paths[0] is not None:
+        ligand_fig = generate_ligand_heatmap(
+            ligand_path=ligand_path,
+            ligand_energy_differences=ligand_energy_differences,
+            output_path=output_paths[0],
+            title=title,
+            total_interaction_energy=total_interaction_energy
+        )
+        # Close immediately after saving to free memory
+        plt.close(ligand_fig)
+
+    # Generate protein interaction heatmap if requested and data available
+    if output_paths[1] is not None and preloaded_protein_prolif is not None:
         atom_mappings = _fp_interaction_mapping(preloaded_protein_prolif, mol)
-        residue_atom_mapping = preloaded_protein_prolif[1]  # Get residue mapping
-        # Use the protein interaction heatmap with proper bond coloring and interaction legends
-        return generate_protein_interaction_heatmap(
+        residue_atom_mapping = preloaded_protein_prolif[1]
+        protein_fig = generate_protein_interaction_heatmap(
             ligand_path=ligand_path,
             ligand_energy_differences=ligand_energy_differences,
             atom_mappings=atom_mappings,
@@ -501,12 +645,18 @@ def generate_energy_heatmap(
             title=title,
             total_interaction_energy=total_interaction_energy,
         )
-    else:
-        # Use basic ligand heatmap for non-protein mode
+        # Return the protein figure if it's the last/only one generated
+        return protein_fig
+
+    # If no output paths provided, generate and return basic ligand heatmap for testing
+    if output_paths[0] is None and output_paths[1] is None:
         return generate_ligand_heatmap(
             ligand_path=ligand_path,
             ligand_energy_differences=ligand_energy_differences,
-            output_path=output_paths[0],
+            output_path=None,
             title=title,
             total_interaction_energy=total_interaction_energy
         )
+
+    # Return None since all figures are saved to files
+    return None

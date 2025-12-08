@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
-def write_structure(atoms: Atoms, file_path: Union[str, Path]) -> str:
+def write_structure(atoms: Atoms, file_path: Path) -> str:
     """
     Write molecular structure to file.
 
@@ -32,8 +32,6 @@ def write_structure(atoms: Atoms, file_path: Union[str, Path]) -> str:
         >>> write_structure(atoms, "output.xyz")
         >>> write_structure(atoms, "output.pdb")
     """
-    file_path = Path(file_path)
-    logger.debug(f"Writing structure with {len(atoms)} atoms to {file_path}")
     logger.debug(f"Writing structure with {len(atoms)} atoms to {file_path}")
 
     # Create directory if it doesn't exist
@@ -45,8 +43,7 @@ def write_structure(atoms: Atoms, file_path: Union[str, Path]) -> str:
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        write(str(file_path), atoms)
-        logger.debug(f"Structure successfully written to {file_path}")
+        write(file_path, atoms)
         logger.debug(f"Structure successfully written to {file_path}")
         return str(file_path)
     except Exception as e:

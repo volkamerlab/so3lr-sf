@@ -187,9 +187,9 @@ class TestExplainUtilsModule:
     def test_categorize_interaction_hydrophobic_vdw(self):
         """Test categorization of hydrophobic and VdW interactions."""
         assert categorize_interaction('Hydrophobic') == 'Hydrophobic'
-        assert categorize_interaction('VdWContact') == 'VdW'
-        assert categorize_interaction('vdw') == 'VdW'
-        assert categorize_interaction('vanderwaals') == 'VdW'
+        assert categorize_interaction('VdWContact') == 'vdW'
+        assert categorize_interaction('vdw') == 'vdW'
+        assert categorize_interaction('vanderwaals') == 'vdW'
 
     @pytest.mark.unit
     def test_categorize_interaction_pi_interactions(self):

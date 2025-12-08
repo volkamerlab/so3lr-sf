@@ -108,7 +108,7 @@ def categorize_interaction(interaction_type: str) -> str:
     elif interaction_lower in ['hydrophobic']:
         return 'Hydrophobic'
     elif interaction_lower in ['vdwcontact', 'vdw', 'vanderwaals']:
-        return 'VdW'
+        return 'vdW'
     elif interaction_lower in ['pistacking', 'pication', 'cationpi', 'edgetoface', 'facetoface', 'basepistacking', 'pi-stacking', 'pi']:
         return 'π-interaction'
     elif interaction_lower in ['anionic', 'cationic', 'saltbridge', 'ionic', 'salt-bridge']:
@@ -183,7 +183,7 @@ def add_interaction_summary(fig: plt.Figure, atom_mappings: List[Dict[str, Any]]
         'H-bond': (0.1, 0.3, 0.7),
         'Halogen bond': (0.1, 0.2, 0.5),
         'Hydrophobic': (0.1, 0.6, 0.1),
-        'VdW': (0.5, 0.9, 0.5),
+        'vdW': (0.5, 0.9, 0.5),
         'π-interaction': (0.9, 0.9, 0.2),
         'Ionic': (0.3, 0.8, 0.8),
         'Metal': (0.8, 0.2, 0.8),
