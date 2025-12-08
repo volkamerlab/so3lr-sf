@@ -344,11 +344,6 @@ def create_pymol_session(complex_path: Union[str, Path],
         f.write("set ray_trace_mode, 1\n")
         f.write("orient\n\n")
 
-        # Create color scale legend info
-        f.write("# Color scale information:\n")
-        f.write("# Blue = Low energy values (normalized 0)\n")
-        f.write("# Red = High energy values (normalized 1)\n")
-
         # Save session
         session_file = output_path.with_suffix(".pse")
         f.write(f"\n# Save session\n")
