@@ -89,9 +89,6 @@ def _create_3d_energy_visualization(
         ligand_atoms = load_ase_structure(ligand_path)[0]
 
         complex_atoms = concat_complex(protein_atoms, ligand_atoms)
-        from ase.io import write
-        write(complex_path, complex_atoms, format='proteindatabank')
-        complex_path = output_path.parent / f"complex2_{ligand_name}.pdb"
 
         write_structure(complex_atoms, complex_path)
         if not complex_path.exists():
@@ -102,7 +99,6 @@ def _create_3d_energy_visualization(
             complex_path=complex_path,
             atom_weights_mapped=atom_weights_mapped,
             output_path=output_path,
-            center_of_mass=True,
         )
 
         return pml_file

@@ -49,7 +49,7 @@ class TestOptimizeStructure:
 
             # Check that optimization ran
             mock_optimizer.run.assert_called_once()
-            assert opt_info['constraint_info'] == {'constraint_applied': False, 'constraint_type': None}
+            assert opt_info['constraint_info'] ==  None
             assert opt_info['converged'] == 'yes'
             assert opt_info['steps'] == 10
             # Check output file
@@ -76,7 +76,7 @@ class TestOptimizeStructure:
                 optimizer='LBFGS',
                 output_path=output_path
             )
-            assert opt_info['constraint_info'] == {'constraint_applied': False, 'constraint_type': None}
+            assert opt_info['constraint_info'] == None
             assert opt_info['converged'] == 'yes'
             assert opt_info['steps'] == 10
 

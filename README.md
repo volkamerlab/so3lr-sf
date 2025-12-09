@@ -104,21 +104,29 @@ src/
 ├── visualizer.py                      # 3D Protein-Ligand Energy Visualizer for PyMOL
 └── __init__.py                        # Package interface
 ```
-### Output Directory Structure
+### Full pipeline output directory structure
 ```
-results_steps_100_fmax0.05/
-├── results_summary.json                    # Main results file
-├── optimization_log.json                   # Optimization details (if --opt-log)
-├── individual_ligands/                      # Extracted ligands (for multi-SDF)
+results_steps_{#_steps}_fmax{FMAX}/
+├── individual_ligands/                     # Extracted ligands (for multi-SDF)
+|   └── ligand_001.sdf
 ├── ligand_exp/                             # Explainability heatmaps
-│   ├── ligand_001_heatmap.png
-│   └── ligand_002_heatmap.png
-└── optimization_outputs/                   # Optimization mode-specific outputs
-    ├── free_opt_protein/                   # Free mode: optimized protein (once)
-    ├── free_opt_ligands/                   # Free mode: individually optimized ligands
-    ├── free_opt_complexes/                 # Free mode: constrained optimized complexes
-    ├── constrained_opt_complexes/          # Constrained mode: optimized complexes
-    └── constrained_opt_components/         # Constrained mode: extracted components
+│   └── ligand_001_heatmap.png
+├── pl_2d_exp/                              # 2D protein-ligand interaction heatmaps
+|   └── ligand_001_protein_interaction.png
+├── pl_3d_exp/                              # 3D protein-ligand interaction heatmaps
+|   ├── complex_ligand_001_constrained_opt.pdb
+|   └── ligand_001_3d_visualization.pml
+├── constrained_opt_complexes/              # Optimized protein-ligand complexes
+|   └── ligand_001_complex_constrained_opt.xyz
+├── constrained_opt_components/             # Extracted optimized protein and ligand components
+|   ├── {protein_name}_ligand_001_constrained_opt.xyz
+|   └── ligand_001_constrained_opt.xyz
+├── free_opt_ligands/                       # Free ligands for strain calculation (strain modes)
+|   └── ligand_001_free_opt.xyz
+└── free_opt_protein/                       # Free protein for strain calculation (strain-prot mode)
+|   └── {protein_name}_free_opt.xyz
+├── results_summary.json                    # Main results file
+└── optimization_log.json                   # Optimization details
 ```
 
 </details>
@@ -133,7 +141,7 @@ results_steps_100_fmax0.05/
 
 ### Workflow Options
 - `--trim FLOAT`: Trim protein around ligand(s) with specified radius in Angstroms
-- `--optimize`: Optimize structures before energy calculation
+- `--optimize FLOAT`: Optimize structures with constrained radius around ligand (default: 4.0 Å)
 - `--exp-lig`: Generate explainability analysis and heatmaps
 - `--exp-prot`: Generate protein explainability with protein-ligand interaction analysis and interacting residue coloring depending on their energy contribution
 - `--exp-3d`: Generate 3D PyMOL visualization of protein energy components
@@ -142,13 +150,14 @@ results_steps_100_fmax0.05/
 - `--trim-lig FILE`: Specific ligand file to use for trimming
 
 ### Optimization Parameters
+- `--optimize FLOAT`: Enable optimization with specified radius around ligand in Angstroms (default: 4.0 if no value provided)
+- `--optimization-mode {no-strain,strain,strain-prot}`: Strain energy calculation mode (default: no-strain)
+  - **no-strain**: Traditional constrained optimization without strain energy corrections
+  - **strain**: Add ligand strain energy (cost of ligand deformation from optimal free conformation)
+  - **strain-prot**: Add both ligand and protein strain energies for complete binding thermodynamics
 - `--optimizer {FIRE,FIRE2,LBFGS,BFGS,BFGSLineSearch,LBFGSLineSearch,GPMin,MDMin,ODE12r,GoodOldQuasiNewton,QuasiNewton}`: Optimization algorithm (default: FIRE)
 - `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
 - `--steps INT`: Maximum optimization steps (default: 100)
-- `--opt-radius FLOAT`: Optimization radius around ligand for constrained optimization (default: 4.0)
-- `--optimization-mode {free,constrained}`: Optimization strategy (default: free)
-  - **free**: First optimize the entire protein structure, then the ligand separately, followed by local optimization within the specified radius around ligand atoms
-  - **constrained**: Perform optimization only within the specified radius around ligand atoms, then extract the optimized structures for energy evaluation
 
 ### Model Parameters
 - `--model-path PATH`: Path to SO3LR model parameters (auto-detected if not specified)
@@ -171,11 +180,11 @@ results_steps_100_fmax0.05/
 python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf
 
 # With structure optimization
-python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf --optimize
+python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf --optimize 4.0
 
-# Full workflow with explainability
+# With constrained optimization + ligand-strain energy and 2D explainable ligand energies
 python so3lr_sf.py --protein protein.pdb --ligands ligands.sdf \
-  --trim 10.0 --optimize --exp-lig --verbose
+  --trim 10.0 --optimize 4.0 --optimization-mode strain --exp-lig --verbose
 ```
 
 ### Python API
@@ -225,31 +234,29 @@ python so3lr_sf.py \
     --verbose
 ```
 
-### Example 3: Free Optimization (Default)
+### Example 3: Constrained Optimization (Default)
 ```bash
 python so3lr_sf.py \
     --protein protein.pdb \
     --ligands ligands.sdf \
-    --optimize \
-    --optimization-mode free \
+    --optimize 4.0 \
+    --optimization-mode no-strain \
     --optimizer FIRE \
     --fmax 0.05 \
     --steps 100 \
-    --opt-radius 4.0 \
     --verbose
 ```
 
-### Example 4: Constrained Optimization
+### Example 4: Constrained Optimization + ligand-strain energy + protein-strain energy
 ```bash
 python so3lr_sf.py \
     --protein protein.pdb \
     --ligands ligands.sdf \
-    --optimize \
-    --optimization-mode constrained \
+    --optimize 4.0 \
+    --optimization-mode strain-prot \
     --optimizer FIRE \
     --fmax 0.05 \
     --steps 100 \
-    --opt-radius 4.0 \
     --verbose
 ```
 
@@ -259,8 +266,8 @@ python so3lr_sf.py \
     --protein protein.pdb \
     --ligands multi_ligands.sdf \
     --trim 8.0 \
-    --optimize \
-    --opt-radius 4.0 \
+    --optimize 4.0 \
+    --optimization-mode strain \
     --exp-lig \
     --opt-log \
     --verbose
@@ -281,7 +288,7 @@ python so3lr_sf.py \
     --protein protein.pdb \
     --ligands ligand.sdf \
     --debug \
-    --optimize
+    --optimize 4.0
 ```
 
 </details>
@@ -289,21 +296,25 @@ python so3lr_sf.py \
 <details>
 <summary><h2>📊 Output Files</h2></summary>
 
-### Results Summary (`results_summary.json`)
+### Results Summary example (`results_summary.json`)
 ```json
 {
   "workflow_parameters": {
-    "protein": "proteins/protein_path.pdb",
-    "ligands_source": "ligands/ligands13.xyz",
-    "trim": false,
+    "protein": "path/to/protein.xyz",
+    "ligands_source": "path/to/ligand.xyz",
+    "trim": null,
     "trim_radius": null,
-    "optimize": false,
+    "optimize": 3.0,
+    "optimization_mode": "strain-prot",
+    "opt_radius": 3.0,
+    "ligand_strain_calculation": true,
+    "protein_strain_calculation": true,
     "ligand explain 2D": false,
     "PL interactions explain 2D": false,
-    "PL interactions explain 3D": true,
-    "optimizer": null,
-    "fmax": null,
-    "steps": null
+    "PL interactions explain 3D": false,
+    "optimizer": "FIRE",
+    "fmax": 0.05,
+    "steps": 100
   },
   "summary": {
     "total_ligands": 1,
@@ -312,18 +323,38 @@ python so3lr_sf.py \
   },
   "results": [
     {
-      "ligand_name": "ligand_001",
-      "interaction_energy": -3.50469970703125,
-      "binding_energy_kcal_mol": -80.81837524414063,
-      "analysis": {
-        "component_totals": {
-          "MLFF": -0.6717734336853027,
-          "ZBL": 0.00029272645645050943,
-          "Electrostatics": -0.13371722865849733,
-          "Dispersion": -0.9648199365474284,
-          "Total": -1.770017891190946
+      "ligand_name": "ligand",
+      "ligand_file": "path/to/ligand.xyz",
+      "interaction_energy": -2.6674346923828125,
+      "base_interaction_energy": -2.7811279296875,
+      "ligand_strain_energy": 0.0687103271484375,
+      "protein_strain_energy": 0.04498291015625,
+      "binding_energy_kcal_mol": -61.51104400634765,
+      "ligand_explainability": {
+        "protein_energy_components": {
+          "electrostatic_energy": -13.823354721069336,
+          "zbl_repulsion": 36.19248580932617,
+          "dispersion_energy": -6.992919445037842,
+          "mlff_atomic_energy": -679.03564453125
         },
-        "ligand_explainability_heatmap": "ligand_exp/ligand_001_heatmap.png"
+        "ligand_energy_components": {
+          "electrostatic_energy": -1.2963955402374268,
+          "zbl_repulsion": 2.4064440727233887,
+          "dispersion_energy": -0.5644962787628174,
+          "mlff_atomic_energy": -60.04219436645508
+        },
+        "complex_energy_components": {
+          "electrostatic_energy": -14.730865478515625,
+          "zbl_repulsion": 38.59886932373047,
+          "dispersion_energy": -9.317378997802734,
+          "mlff_atomic_energy": -740.4879150390625
+        },
+        "interaction_energy_components": {
+          "electrostatic_energy": 0.3888847827911377,
+          "zbl_repulsion": -6.0558319091796875e-05,
+          "dispersion_energy": -1.7599632740020752,
+          "mlff_atomic_energy": -1.4100761413574219
+        }
       }
     }
   ]

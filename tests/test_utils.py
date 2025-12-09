@@ -484,8 +484,6 @@ class TestSetupOutputDirectory:
         expected_dir = temp_dir / "results_steps_1000_fmax0.01"
         assert result == expected_dir
         assert expected_dir.exists()
-        assert (expected_dir / "opt_ligand").exists()
-        assert (expected_dir / "opt_complexes").exists()
 
         # Cleanup
         import shutil
@@ -537,6 +535,8 @@ class TestSetupOutputDirectory:
             optimize=True,
             trim_radius=3.0,
             exp_lig=True,
+            exp_prot=True,
+            exp_3d=True,
             steps=500,
             fmax=0.05
         )
@@ -544,9 +544,9 @@ class TestSetupOutputDirectory:
         expected_dir = temp_dir / "results_steps_500_fmax0.05_trim_3.0A"
         assert result == expected_dir
         assert expected_dir.exists()
-        assert (expected_dir / "opt_ligand").exists()
-        assert (expected_dir / "opt_complexes").exists()
         assert (expected_dir / "ligand_exp").exists()
+        assert (expected_dir / "pl_2d_exp").exists()
+        assert (expected_dir / "pl_3d_exp").exists()
 
         # Cleanup
         import shutil
@@ -641,6 +641,8 @@ class TestSaveResults:
         mock_args.optimizer = "FIRE"
         mock_args.fmax = 0.01
         mock_args.steps = 1000
+        mock_args.optimization_mode = "no-strain"
+        mock_args.opt_radius = None
 
         mock_logger = Mock()
 

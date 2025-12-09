@@ -157,6 +157,68 @@ def compute_interaction_energy(complex_energy: float, non_iter_energy: float,
     return interaction_energy
 
 
+def calculate_strain_energies(optimized_ligand_path: str, optimized_protein_path: str,
+                             free_ligand_path: Optional[str], free_protein_path: Optional[str],
+                             calc: So3lrSfCalculator, calculate_protein_strain: bool = False,
+                             logger=None) -> Dict[str, float]:
+    """
+    Calculate strain energies for ligand and optionally protein.
+
+    Strain energy = Energy_in_complex - Energy_free_optimized
+
+    Args:
+        optimized_ligand_path: Path to ligand extracted from optimized complex
+        optimized_protein_path: Path to protein extracted from optimized complex
+        free_ligand_path: Path to free optimized ligand (required for strain calc)
+        free_protein_path: Path to free optimized protein (optional, for protein strain)
+        calc: Calculator instance
+        calculate_protein_strain: Whether to calculate protein strain energy
+        logger: Logger instance
+
+    Returns:
+        Dictionary containing strain energies
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    strain_energies = {}
+
+    # Calculate ligand strain energy
+    if free_ligand_path is not None:
+        logger.info("Calculating ligand strain energy...")
+
+        # Energy of ligand in optimized complex
+        ligand_in_complex = load_ase_structure(optimized_ligand_path)[0]
+        ligand_complex_energy = calc.calculate_energy(ligand_in_complex)
+
+        # Energy of free optimized ligand
+        free_ligand = load_ase_structure(free_ligand_path)[0]
+        free_ligand_energy = calc.calculate_energy(free_ligand)
+
+        ligand_strain = ligand_complex_energy - free_ligand_energy
+        strain_energies['ligand_strain'] = ligand_strain
+
+        logger.info(f"Ligand strain energy: {ligand_strain:.6f} eV ({ligand_strain * 23.06:.2f} kcal/mol)")
+
+    # Calculate protein strain energy (if requested)
+    if calculate_protein_strain and free_protein_path is not None:
+        logger.info("Calculating protein strain energy...")
+
+        # Energy of protein in optimized complex
+        protein_in_complex = load_ase_structure(optimized_protein_path)[0]
+        protein_complex_energy = calc.calculate_energy(protein_in_complex)
+
+        # Energy of free optimized protein
+        free_protein = load_ase_structure(free_protein_path)[0]
+        free_protein_energy = calc.calculate_energy(free_protein)
+
+        protein_strain = protein_complex_energy - free_protein_energy
+        strain_energies['protein_strain'] = protein_strain
+
+        logger.info(f"Protein strain energy: {protein_strain:.6f} eV ({protein_strain * 23.06:.2f} kcal/mol)")
+
+    return strain_energies
+
 def compute_eda_analysis(protein_components: Dict, ligand_components: Dict, complex_components: Dict,
                         logger=None) -> Dict[str, Any]:
     """
