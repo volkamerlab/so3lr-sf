@@ -220,27 +220,13 @@ def setup_output_directory(protein_path: Union[str, Path], optimize: bool = Fals
 
     output_dir = Path(protein_path).parent / output_name
     logger.debug(f"Creating output directory: {output_dir}")
-    logger.debug(f"Creating output directory: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Note: Optimization subdirectories are created dynamically by optimization functions as needed
-        
-    # Create explain subdirectories based on specific modes
-    if exp_lig:
-        logger.debug(f"Created optimization subdirectories in: {output_dir}")
-        
+
     # Create explain subdirectories based on specific modes
     if exp_lig:
         (output_dir / "ligand_exp").mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Created ligand explainability subdirectory: {output_dir / 'ligand_exp'}")
-
-    if exp_prot:
-        (output_dir / "pl_2d_exp").mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Created protein explainability subdirectory: {output_dir / 'pl_2d_exp'}")
-
-    if exp_3d:
-        (output_dir / "pl_3d_exp").mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Created 3D explainability subdirectory: {output_dir / 'pl_3d_exp'}")
         logger.debug(f"Created ligand explainability subdirectory: {output_dir / 'ligand_exp'}")
 
     if exp_prot:

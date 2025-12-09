@@ -108,23 +108,23 @@ src/
 ```
 results_steps_{#_steps}_fmax{FMAX}/
 ├── individual_ligands/                     # Extracted ligands (for multi-SDF)
-|   └── ligand_001.sdf
+│   └── ligand_001.sdf
 ├── ligand_exp/                             # Explainability heatmaps
 │   └── ligand_001_heatmap.png
 ├── pl_2d_exp/                              # 2D protein-ligand interaction heatmaps
-|   └── ligand_001_protein_interaction.png
+│   └── ligand_001_protein_interaction.png
 ├── pl_3d_exp/                              # 3D protein-ligand interaction heatmaps
-|   ├── complex_ligand_001_constrained_opt.pdb
-|   └── ligand_001_3d_visualization.pml
+│   ├── complex_ligand_001_constrained_opt.pdb
+│   └── ligand_001_3d_visualization.pml
 ├── constrained_opt_complexes/              # Optimized protein-ligand complexes
-|   └── ligand_001_complex_constrained_opt.xyz
+│   └── ligand_001_complex_constrained_opt.xyz
 ├── constrained_opt_components/             # Extracted optimized protein and ligand components
-|   ├── {protein_name}_ligand_001_constrained_opt.xyz
-|   └── ligand_001_constrained_opt.xyz
+│   ├── {protein_name}_ligand_001_constrained_opt.xyz
+│   └── ligand_001_constrained_opt.xyz
 ├── free_opt_ligands/                       # Free ligands for strain calculation (strain modes)
-|   └── ligand_001_free_opt.xyz
-└── free_opt_protein/                       # Free protein for strain calculation (strain-prot mode)
-|   └── {protein_name}_free_opt.xyz
+│   └── ligand_001_free_opt.xyz
+├── free_opt_protein/                       # Free protein for strain calculation (strain-prot mode)
+│   └── {protein_name}_free_opt.xyz
 ├── results_summary.json                    # Main results file
 └── optimization_log.json                   # Optimization details
 ```

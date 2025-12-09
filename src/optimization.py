@@ -451,7 +451,7 @@ def constrained_optimization(ligand_file: str, ligand_name: str, working_protein
 
 
 def strain_optimization(ligand_file: str, ligand_name: str, working_protein_path: str,
-                       output_dir: Path, calc, args, optimization_log: Optional[List], logger, constraint: Optional[set[int]]):
+                       output_dir: Path, calc, args, optimization_log: Optional[List], logger, constraint: Optional[set[FixAtoms]]):
     """
     Perform free optimization of individual components for strain energy calculation.
 
