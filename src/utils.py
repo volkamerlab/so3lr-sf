@@ -220,31 +220,13 @@ def setup_output_directory(protein_path: Union[str, Path], optimize: bool = Fals
 
     output_dir = Path(protein_path).parent / output_name
     logger.debug(f"Creating output directory: {output_dir}")
-    logger.debug(f"Creating output directory: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create subdirectories
-    if optimize:
-        (output_dir / "opt_ligand").mkdir(parents=True, exist_ok=True)
-        (output_dir / "opt_complexes").mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Created optimization subdirectories in: {output_dir}")
-        
-    # Create explain subdirectories based on specific modes
-    if exp_lig:
-        logger.debug(f"Created optimization subdirectories in: {output_dir}")
-        
+    # Note: Optimization subdirectories are created dynamically by optimization functions as needed
+
     # Create explain subdirectories based on specific modes
     if exp_lig:
         (output_dir / "ligand_exp").mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Created ligand explainability subdirectory: {output_dir / 'ligand_exp'}")
-
-    if exp_prot:
-        (output_dir / "pl_2d_exp").mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Created protein explainability subdirectory: {output_dir / 'pl_2d_exp'}")
-
-    if exp_3d:
-        (output_dir / "pl_3d_exp").mkdir(parents=True, exist_ok=True)
-        logger.debug(f"Created 3D explainability subdirectory: {output_dir / 'pl_3d_exp'}")
         logger.debug(f"Created ligand explainability subdirectory: {output_dir / 'ligand_exp'}")
 
     if exp_prot:
@@ -276,9 +258,10 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
                     'trim': args.trim,
                     'trim_radius': args.radius if args.trim else None,
                     'optimize': args.optimize,
-                    'ligand explain 2D': args.exp_lig,
-                    'PL interactions explain 2D': args.exp_prot,
-                    'PL interactions explain 3D': args.exp_3d,
+                    'optimization_mode': getattr(args, 'optimization_mode', 'no-strain') if args.optimize else None,
+                    'opt_radius': getattr(args, 'opt_radius', None) if args.optimize else None,
+                    'ligand_strain_calculation': getattr(args, 'optimization_mode', 'no-strain') in ['strain', 'strain-prot'] if args.optimize else False,
+                    'protein_strain_calculation': getattr(args, 'optimization_mode', 'no-strain') == 'strain-prot' if args.optimize else False,
                     'ligand explain 2D': args.exp_lig,
                     'PL interactions explain 2D': args.exp_prot,
                     'PL interactions explain 3D': args.exp_3d,
