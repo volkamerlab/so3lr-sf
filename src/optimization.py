@@ -578,7 +578,7 @@ def strain_optimization(ligand_file: str, ligand_name: str, working_protein_path
     return optimized_free_ligand_path, optimized_free_protein_path
 
 
-def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None):
+def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None, charges=(0, 0, 0)):
     """
     Complete workflow for processing a single ligand with protein-ligand interaction analysis.
 
@@ -715,7 +715,8 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
             eda=args.eda,
             verbose=getattr(args, 'verbose', False),
             preloaded_protein_prolif=preloaded_protein_prolif,
-            exp_outputs=exp_outputs
+            exp_outputs=exp_outputs,
+            charges=charges
         )
 
         # Handle results

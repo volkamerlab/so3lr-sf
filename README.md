@@ -162,6 +162,11 @@ results_steps_{#_steps}_fmax{FMAX}/
 ### Model Parameters
 - `--model-path PATH`: Path to SO3LR model parameters (auto-detected if not specified)
 
+### Charge Parameters
+- `--charge-lig INT`: Charge of the ligand (default: 0)
+- `--charge-prot INT`: Charge of the protein (default: 0)
+- `--charge-cpx INT`: Charge of the complex (default: 0)
+
 ### Logging & Output
 - `-v, --verbose`: Enable detailed logging output (INFO level)
 - `--debug`: Enable debug level logging (includes verbose output and detailed debugging information)
@@ -282,7 +287,19 @@ python so3lr_sf.py \
     --verbose
 ```
 
-### Example 7: Debug Mode for Troubleshooting
+### Example 7: With Explicit Charge Parameters
+```bash
+python so3lr_sf.py \
+    --protein protein.pdb \
+    --ligands ligand.sdf \
+    --charge-prot -2 \
+    --charge-lig 1 \
+    --charge-cpx -1 \
+    --optimize 4.0 \
+    --verbose
+```
+
+### Example 8: Debug Mode for Troubleshooting
 ```bash
 python so3lr_sf.py \
     --protein protein.pdb \

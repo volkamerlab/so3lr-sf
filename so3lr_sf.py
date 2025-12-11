@@ -141,6 +141,26 @@ Examples:
         help="Path to SO3LR model parameters (auto-detected if not specified)"
     )
 
+    # Charge parameters
+    parser.add_argument(
+        "--charge-lig",
+        type=int,
+        default=0,
+        help="Charge of the ligand (default: 0)"
+    )
+    parser.add_argument(
+        "--charge-prot",
+        type=int,
+        default=0,
+        help="Charge of the protein (default: 0)"
+    )
+    parser.add_argument(
+        "--charge-cpx",
+        type=int,
+        default=0,
+        help="Charge of the complex (default: 0)"
+    )
+
     # Logging
     parser.add_argument(
         "-v", "--verbose",
@@ -197,6 +217,14 @@ def main():
         logger.debug(f"Command line arguments: {vars(args)}")
         logger.info(f"Protein: {args.protein}")
         logger.info(f"Ligands: {args.ligands}")
+
+        # Warn if charges are not explicitly provided
+        if args.charge_lig == 0 and args.charge_prot == 0 and args.charge_cpx == 0:
+            logger.warning("WARNING: Charge parameters not explicitly provided. Using default values (charge-lig=0, charge-prot=0, charge-cpx=0). "
+                          "For accurate calculations, consider specifying actual charges using --charge-lig, --charge-prot, and --charge-cpx arguments.")
+        else:
+            logger.info(f"Charges: protein={args.charge_prot}, ligand={args.charge_lig}, complex={args.charge_cpx}")
+
         # Check for 3D explain argument (handle hyphen conversion)
         logger.info(f"Workflow: trim={args.trim}, optimize={args.optimize}, eda={args.eda}, exp-lig={args.exp_lig}, exp-prot={args.exp_prot}, exp-3d={args.exp_3d}")
 
@@ -256,7 +284,8 @@ def main():
             result, error = process_single_ligand(
                 ligand_file, args, calc, working_protein_path,
                 output_dir, optimization_log, logger,
-                preloaded_protein_prolif
+                preloaded_protein_prolif,
+                charges=(args.charge_prot, args.charge_lig, args.charge_cpx)
             )
 
             if error:

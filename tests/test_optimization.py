@@ -712,7 +712,8 @@ class TestProcessSingleLigand:
                 eda=False,
                 verbose=False,
                 preloaded_protein_prolif=None,
-                exp_outputs=expected_exp_outputs
+                exp_outputs=expected_exp_outputs,
+                charges=(0, 0, 0)
             )
 
     @pytest.mark.unit

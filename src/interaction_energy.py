@@ -19,7 +19,8 @@ from .explainability import generate_energy_heatmap
 from .explain_utils import compute_energy_differences
 
 def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, Path],
-                      complex_path: Optional[Union[str, Path]] = None, logger=None) -> Tuple[Atoms, Atoms, Atoms]:
+                      complex_path: Optional[Union[str, Path]] = None, logger=None,
+                      charges: Tuple[int, int, int] = (0, 0, 0)) -> Tuple[Atoms, Atoms, Atoms]:
     """
     Load and prepare protein, ligand, and complex structures.
 
@@ -62,7 +63,9 @@ def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, P
         positions = np.concatenate((protein_atoms.get_positions(), ligand_atoms.get_positions()), axis=0)
         complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
         logger.debug(f"Complex created: {len(complex_atoms)} total atoms")
-
+    protein_atoms.info['charge'] = charges[0]
+    ligand_atoms.info['charge'] = charges[1]
+    complex_atoms.info['charge'] = charges[2]
     return protein_atoms, ligand_atoms, complex_atoms
 
 
@@ -377,6 +380,7 @@ def protein_ligand_interaction(
     verbose: bool = False,
     preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None,
     exp_outputs: Optional[Tuple[Optional[Union[str, Path]], Optional[Union[str, Path]], Optional[Union[str, Path]]]] = None,
+    charges: Tuple[Optional[int], Optional[int], Optional[int]] = (0, 0, 0),
 ) -> Union[float, Tuple[float, Dict[str, Any]]]:
     """
     Calculate protein-ligand interaction energy with optional explainability.
@@ -432,7 +436,7 @@ def protein_ligand_interaction(
 
     # Step 1: Prepare structures
     protein_atoms, ligand_atoms, complex_atoms = prepare_structures(
-        protein_path, ligand_path, complex_path, logger
+        protein_path, ligand_path, complex_path, logger, charges=charges
     )
 
     # Step 2: Calculate individual energies
