@@ -51,8 +51,8 @@ Examples:
   # 3D protein energy visualization
   python so3lr_sf.py protein.pdb ligands.sdf --exp-prot --exp-3d
 
-  # Process ligand directory
-  python so3lr_sf.py protein.pdb ligands.sdf --optimize --exp-lig
+  # Process ligand directory with double precision
+  python so3lr_sf.py protein.pdb ligands.sdf --optimize --exp-lig --dp
         """
     )
 
@@ -139,6 +139,11 @@ Examples:
         "--model-path",
         type=str,
         help="Path to SO3LR model parameters (auto-detected if not specified)"
+    )
+    parser.add_argument(
+        "--dp",
+        action="store_true",
+        help="Enable double precision (float64) for JAX-MD powered calculations"
     )
 
     # Charge parameters
@@ -241,6 +246,8 @@ def main():
         calc_kwargs = {}
         if args.exp_lig or args.eda or args.exp_prot or args.exp_3d:
             calc_kwargs['output_per_atom_energy_components'] = True
+        if args.dp:
+            calc_kwargs['dp'] = True
 
         logger.debug(f"Calculator kwargs: {calc_kwargs}")
         logger.info("Initializing SO3LRSF calculator...")

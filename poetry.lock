@@ -12,17 +12,6 @@ files = [
 ]
 
 [[package]]
-name = "aiofiles"
-version = "24.1.0"
-description = "File support for asyncio."
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "aiofiles-24.1.0-py3-none-any.whl", hash = "sha256:b4ec55f4195e3eb5d7abd1bf7e061763e864dd4954231fb8539a0ef8bb8260e5"},
-    {file = "aiofiles-24.1.0.tar.gz", hash = "sha256:22a075c9e5a3810f0c2e48f3008c94d68c65d763b9b03857924c99e57355166c"},
-]
-
-[[package]]
 name = "annotated-types"
 version = "0.7.0"
 description = "Reusable constraint types to use with typing.Annotated"
@@ -1219,6 +1208,26 @@ reference = "main"
 resolved_reference = "952f02b5ef355499278a836a3d8dc6d8174951bf"
 
 [[package]]
+name = "jax-pme"
+version = "0.1.0-alpha.1"
+description = "(Particle Mesh) Ewald summation in JAX"
+optional = false
+python-versions = ">=3.7"
+files = []
+develop = false
+
+[package.dependencies]
+ase = ">=3.22.1"
+numpy = "*"
+vesin = "*"
+
+[package.source]
+type = "git"
+url = "https://github.com/fbruenig/jax-pme"
+reference = "main"
+resolved_reference = "fdbcfbaa5f9b4a2d7ffca624aba5a0c8464cf749"
+
+[[package]]
 name = "jaxlib"
 version = "0.5.3"
 description = "XLA library for JAX"
@@ -2367,18 +2376,17 @@ torch = ["torch"]
 
 [[package]]
 name = "orbax-checkpoint"
-version = "0.11.24"
+version = "0.11.13"
 description = "Orbax Checkpoint"
 optional = false
 python-versions = ">=3.10"
 files = [
-    {file = "orbax_checkpoint-0.11.24-py3-none-any.whl", hash = "sha256:a94178c9ba9fd3d6fd8fc511b6a0f34f7d89798bfdb79661e258cd32ada7650b"},
-    {file = "orbax_checkpoint-0.11.24.tar.gz", hash = "sha256:4e7afe927d1ed6d8160bacf5ed4fef56c1370320e0ebdfda213c6351a2e3c0d0"},
+    {file = "orbax_checkpoint-0.11.13-py3-none-any.whl", hash = "sha256:096eb6f475857d7aa73235989cdfe5d34c425628d24be881686dfbc3b566f495"},
+    {file = "orbax_checkpoint-0.11.13.tar.gz", hash = "sha256:6ce6f4458d0755a7ae556d4da3b2e3a943d4a830aeec2f98881643f1997e11bc"},
 ]
 
 [package.dependencies]
 absl-py = "*"
-aiofiles = "*"
 etils = {version = "*", extras = ["epath", "epy"]}
 humanize = "*"
 jax = ">=0.5.0"
@@ -2392,8 +2400,8 @@ tensorstore = ">=0.1.71"
 typing_extensions = "*"
 
 [package.extras]
-docs = ["aiofiles", "flax", "google-cloud-logging", "grain", "opencv-python", "safetensors", "tensorflow_datasets"]
-testing = ["aiofiles", "chex", "flax", "google-cloud-logging", "mock", "pytest", "pytest-xdist", "safetensors"]
+docs = ["flax", "google-cloud-logging"]
+testing = ["aiofiles", "chex", "flax", "google-cloud-logging", "mock", "pytest", "pytest-xdist"]
 
 [[package]]
 name = "packaging"
@@ -3687,6 +3695,34 @@ files = [
 ]
 
 [[package]]
+name = "so3lr"
+version = "0.1.0"
+description = "SO3krates Universal Pairwise Force Field with Long Range Interactions (SO3LR) for Molecular Simulation"
+optional = false
+python-versions = ">=3.12"
+files = []
+develop = false
+
+[package.dependencies]
+ase = "*"
+glp = {git = "https://github.com/kabylda/glp.git", branch = "electrostatics_neighbourlist"}
+h5py = "*"
+jax = "==0.5.3"
+jax-md = {git = "https://github.com/kabylda/jax-md.git", branch = "main"}
+jax-pme = {git = "https://github.com/fbruenig/jax-pme", branch = "main"}
+jaxlib = "==0.5.3"
+jraph = {git = "https://github.com/kabylda/jraph.git", branch = "master"}
+numpy = "*"
+orbax-checkpoint = "==0.11.13"
+setuptools = "<81"
+
+[package.source]
+type = "git"
+url = "https://github.com/hamzaibrahim21/so3lr.git"
+reference = "main"
+resolved_reference = "15c900f9fc379bfa556807238d74f554483023a6"
+
+[[package]]
 name = "specable"
 version = "0.1.1"
 description = "dictionaries to objects and vice versa"
@@ -4051,6 +4087,27 @@ socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
 zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
+name = "vesin"
+version = "0.4.2"
+description = "Computing neighbor lists for atomistic system"
+optional = false
+python-versions = ">=3.10"
+files = [
+    {file = "vesin-0.4.2-py3-none-macosx_10_13_x86_64.whl", hash = "sha256:0c04157b86ebd2aba4a2e254fc2bba47cf4a7069884b81c45e2fd802e3dd906e"},
+    {file = "vesin-0.4.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:22cd5adcedccc766f98f6185bc737e3f43fc21e6aee54b8803ced17b8e7460fb"},
+    {file = "vesin-0.4.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:16fb90d0f37ff52d35de339be0722165500f7913e216ac98f70303f160417c86"},
+    {file = "vesin-0.4.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:72b7c3e26860c5a751fa18676f9487057a1a1f0c50993fedfe1909e33ba608f2"},
+    {file = "vesin-0.4.2-py3-none-win_amd64.whl", hash = "sha256:70f57f618c3426c1376fbf7b79e06166e5e530e57cf787e974160a1a53a49d95"},
+    {file = "vesin-0.4.2.tar.gz", hash = "sha256:46bcfdc4d56490d43a6d8c5882b900b5cf49cff68b6ffb78d442ff85d0104d4f"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[package.extras]
+torch = ["vesin-torch"]
+
+[[package]]
 name = "wadler-lindig"
 version = "0.1.7"
 description = "A Wadler–Lindig pretty-printer for Python."
@@ -4251,4 +4308,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.12,<4.0"
-content-hash = "b85b00ee2866aa54071319c3e540d02aed1347edca85992110708f8e7f2bead3"
+content-hash = "2a3785905e6ec26b47ba7b1913b3c48afbe34395cc10cda3602400b311735f83"

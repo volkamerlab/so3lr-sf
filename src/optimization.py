@@ -232,7 +232,8 @@ def optimize_structure(
         }
 
     # Use provided So3lrSfCalculator - let it handle fresh initialization
-    calc._init_calculator()
+    # For optimization, we always need the MLFF calculator since JAX-MD doesn't support forces
+    calc._init_so3lr_calculator()
     atoms.calc = calc._calculator
 
     if constraint is not None:

@@ -7,16 +7,29 @@ This module provides the core calculator interface for energy calculations using
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Union
 from ase import Atoms
+from ase.calculators.calculator import Calculator, all_changes
+
+# Try to import JAX-MD components for enhanced performance
+try:
+    import jax
+    import jax.numpy as jnp
+    from jax_md import space
+    from so3lr import to_jax_md, So3lrPotential
+    _jax_available = True
+except ImportError:
+    _jax_available = False
+
+# Standard SO3LR calculator
 from mlff.md.calculator_sparse import mlffCalculatorSparse
 
 from .utils import validate_structure
 from .molecule_loader import load_ase_structure
 from .config import get_default_model_path
+from .jaxmd_eda import so3lr_potential_eda
 
 logger = logging.getLogger(__name__)
-
 
 class So3lrSfCalculator:
     """
@@ -30,6 +43,7 @@ class So3lrSfCalculator:
         model_path (str): Path to SO3LR model parameters
         lr_cutoff (float): Long-range interaction cutoff distance
         dtype (type): Numerical precision for calculations
+        dp (bool): Double precision flag
         output_per_atom_energy_components (bool): Whether per-atom components are enabled
     """
 
@@ -39,7 +53,8 @@ class So3lrSfCalculator:
         lr_cutoff: float = 12.0,
         dispersion_energy_lr_cutoff_damping: float = 2.0,
         dtype: type = np.float32,
-        output_per_atom_energy_components: bool = False
+        output_per_atom_energy_components: bool = False,
+        dp: bool = False
     ):
         """
         Initialize the SO3LR-SF energy calculator.
@@ -50,42 +65,56 @@ class So3lrSfCalculator:
             dispersion_energy_lr_cutoff_damping: Dispersion energy cutoff damping factor (default: 2.0)
             dtype: Numerical precision - np.float32 for speed, np.float64 for accuracy
             output_per_atom_energy_components: Enable per-atom energy decomposition
+            dp: Enable double precision (float64). Overrides dtype when True.
 
         Raises:
             FileNotFoundError: If model_path is None and automatic detection fails
 
         Example:
-            >>> # Basic calculator with auto-detection
+            >>> # Basic calculator (JAX-MD, if failed, falls back to MLFF)
             >>> calc = So3lrSfCalculator()
             >>>
-            >>> # High-precision calculator with per-atom components
-            >>> calc = So3lrSfCalculator(dtype=np.float64,
-            ...                         output_per_atom_energy_components=True)
+            >>> # Calculator with EDA (JAX-MD, if failed, falls back to MLFF)
+            >>> calc = So3lrSfCalculator(output_per_atom_energy_components=True)
         """
         # Auto-detect model path if not provided
         if model_path is None:
             model_path = get_default_model_path()
 
+        # Handle double precision flag
+        if dp:
+            self.dtype = np.float64
+            # Enable JAX double precision if JAX is available
+            if _jax_available:
+                jax.config.update("jax_enable_x64", True)
+        else:
+            self.dtype = dtype
+            # Disable JAX double precision if explicitly not requested and JAX is available
+            if _jax_available and dtype != np.float64:
+                jax.config.update("jax_enable_x64", False)
+
         self.model_path = model_path
         self.lr_cutoff = lr_cutoff
         self.dispersion_energy_lr_cutoff_damping = dispersion_energy_lr_cutoff_damping
-        self.dtype = dtype
+        self.dp = dp
         self.output_per_atom_energy_components = output_per_atom_energy_components
 
-        # Initialize calculator
+        # Initialize calculator (always try JAX-MD first, fallback to MLFF)
         self._calculator = None
+        self._jax_setup = None
+        self._last_aux_data = {}
         self._init_calculator()
 
     def _init_calculator(self) -> None:
         """
-        Initialize the underlying MLFFCalculator with SO3LR parameters.
-
-        This method sets up the core calculator with the specified parameters
-        and validates that the model can be loaded successfully.
-
-        Raises:
-            RuntimeError: If calculator initialization fails
+        Initialize calculator. JAX-MD is tried first, falls back to MLFF on failure.
         """
+        # Don't initialize anything here - JAX-MD will be tried first in calculate_energy
+        # and MLFF will be initialized only when needed as fallback
+        self._calculator = None
+
+    def _init_so3lr_calculator(self) -> None:
+        """Initialize the SO3LR calculator."""
         try:
             logger.debug(f"Initializing SO3LR calculator with model path: {self.model_path}")
             logger.debug(f"Calculator parameters: lr_cutoff={self.lr_cutoff}, "
@@ -109,7 +138,7 @@ class So3lrSfCalculator:
             original_levels = {}
             for log in loggers_to_suppress:
                 original_levels[log] = log.level
-                log.setLevel(logging.CRITICAL)  # Even more restrictive
+                log.setLevel(logging.CRITICAL)
 
             try:
                 self._calculator = mlffCalculatorSparse.create_from_ckpt_dir(
@@ -117,7 +146,7 @@ class So3lrSfCalculator:
                     lr_cutoff=self.lr_cutoff,
                     dispersion_energy_lr_cutoff_damping=self.dispersion_energy_lr_cutoff_damping,
                     from_file=False,
-                    calculate_stress=False,  # We don't need stress calculations
+                    calculate_stress=False,
                     dtype=self.dtype,
                     add_energy_shift=False,
                     output_per_atom_energy_components=self.output_per_atom_energy_components
@@ -129,16 +158,15 @@ class So3lrSfCalculator:
 
             logger.debug("SO3LR calculator initialized successfully")
         except Exception as e:
-            logger.debug(f"Calculator initialization failed: {e}")
+            logger.debug(f"SO3LR calculator initialization failed: {e}")
             raise RuntimeError(f"Failed to initialize SO3LR calculator: {e}")
 
     def calculate_energy(self, atoms: Union[Atoms, str, Path]) -> float:
         """
         Calculate the potential energy of a molecular system.
 
-        This method computes the total potential energy using the SO3LR model,
-        including all long-range interactions and corrections. Each call performs
-        a complete energy calculation.
+        This method computes the total potential energy using either JAX-MD mode
+        for enhanced performance or SO3LR mode for full feature support.
 
         Args:
             atoms: Molecular structure as ASE Atoms object or path to structure file
@@ -162,15 +190,93 @@ class So3lrSfCalculator:
 
         validate_structure(atoms)
 
-        # Re-initialize calculator for fresh calculation
-        self._init_calculator()
+        if _jax_available:
+            try:
+                return self._calculate_energy_jax_md(atoms)
+            except Exception as e:
+                logger.debug(f"JAX-MD calculation failed ({e}), falling back to MLFF calculator")
+                # Fallback to MLFF calculator
+                return self._calculate_energy_so3lr(atoms)
+        else:
+            logger.debug("JAX not available, using MLFF calculator")
+            return self._calculate_energy_so3lr(atoms)
+
+    def _calculate_energy_jax_md(self, atoms: Atoms) -> float:
+        """Calculate energy using JAX-MD for enhanced performance."""
+        # logger.debug("Using JAX-MD mode for energy calculation")
+
+        # Setup JAX-MD system with appropriate precision
+        jax_dtype = jnp.float64 if self.dp or self.dtype == np.float64 else jnp.float32
+        positions = jnp.array(atoms.get_positions(), dtype=jax_dtype)
+        atomic_numbers = jnp.array(atoms.get_atomic_numbers(), dtype=jnp.int32)
+
+        # Setup displacement function for free boundary conditions
+        displacement, shift = space.free()
+
+        # Choose potential based on EDA requirements
+        if self.output_per_atom_energy_components:
+            potential = so3lr_potential_eda(self.model_path, dtype=jax_dtype)
+        else:
+            potential = So3lrPotential(dtype=jax_dtype)
+
+
+        neighbor_fn, neighbor_fn_lr, energy_fn = to_jax_md(
+            potential=potential,
+            displacement_or_metric=displacement,
+            box_size=None,
+            species=atomic_numbers,
+            capacity_multiplier=1.25,
+            buffer_size_multiplier_sr=1.25,
+            buffer_size_multiplier_lr=1.25,
+            minimum_cell_size_multiplier_sr=1.0,
+            disable_cell_list=True,
+            fractional_coordinates=False
+        )
+
+        # Initialize neighbor lists
+        nbrs = neighbor_fn.allocate(positions, box=None)
+        nbrs_lr = neighbor_fn_lr.allocate(positions, box=None)
+
+        # Calculate energy
+        if self.output_per_atom_energy_components:
+            # For EDA-enabled potential, we need to handle aux output
+            result = energy_fn(positions, neighbor=nbrs.idx, neighbor_lr=nbrs_lr.idx, box=None, has_aux=True)
+            if isinstance(result, tuple):
+                energy = result[0]
+                self._last_aux_data = result[1]  # Store aux data for component extraction
+            else:
+                energy = result
+                self._last_aux_data = {}
+        else:
+            energy = energy_fn(positions, neighbor=nbrs.idx, neighbor_lr=nbrs_lr.idx, box=None)
+
+        # Handle different energy result formats
+        energy_array = np.array(energy)
+        # logger.debug(f"Energy result shape: {energy_array.shape}, dtype: {energy_array.dtype}, value: {energy_array}")
+
+        if energy_array.ndim == 0:
+            energy_value = float(energy_array)
+        elif energy_array.ndim == 1 and len(energy_array) == 1:
+            energy_value = float(energy_array[0])
+        else:
+            energy_value = float(np.sum(energy_array))
+
+        # logger.debug(f"JAX-MD energy calculation completed: {energy_value:.6f} eV")
+        return energy_value
+
+
+
+    def _calculate_energy_so3lr(self, atoms: Atoms) -> float:
+        """Calculate energy using standard SO3LR calculator."""
+        logger.debug("Using SO3LR mode for energy calculation")
+
+        # Initialize MLFF calculator for force/optimization support
+        self._init_so3lr_calculator()
 
         # Set calculator and compute energy
         atoms.calc = self._calculator
-        logger.debug("Starting energy calculation...")
         try:
             energy = atoms.get_potential_energy()
-            logger.debug(f"Energy calculation completed: {energy:.6f} eV")
             return float(energy)
         except Exception as e:
             raise RuntimeError(f"Energy calculation failed: {e}")
@@ -208,6 +314,21 @@ class So3lrSfCalculator:
             )
 
         logger.debug("Retrieving per-atom energy components from calculator")
+
+        # Try JAX-MD aux data first
+        if hasattr(self, '_last_aux_data') and self._last_aux_data:
+            components = {}
+            component_keys = ['mlff_atomic_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy']
+
+            for component_key in component_keys:
+                if component_key in self._last_aux_data:
+                    components[component_key] = np.array(self._last_aux_data[component_key])
+                else:
+                    logger.debug(f"Component {component_key} not found in aux data")
+
+            return components if components else None
+
+        # Fall back to MLFF calculator
         if hasattr(self._calculator, 'get_per_atom_energy_components'):
             return self._calculator.get_per_atom_energy_components()
         else:
