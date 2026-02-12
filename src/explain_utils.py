@@ -406,11 +406,11 @@ def atom_weights_calculation(
 
         # Add protein atom weights (indices 0 to n_protein_atoms-1)
         for i, weight in enumerate(protein_values):
-            component_weights[i] = float(weight)
+            component_weights[i+1] = float(weight)
 
         # Add ligand atom weights (indices n_protein_atoms to n_protein_atoms+n_ligand_atoms-1)
         for i, weight in enumerate(ligand_values):
-            atom_index = n_protein_atoms + i
+            atom_index = n_protein_atoms + i + 1
             component_weights[atom_index] = float(weight)
 
         atom_weights[component] = component_weights
