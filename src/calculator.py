@@ -215,7 +215,12 @@ class So3lrSfCalculator:
 
         # Choose potential based on EDA requirements
         if self.output_per_atom_energy_components:
-            potential = so3lr_potential_eda(self.model_path, dtype=jax_dtype)
+            potential = so3lr_potential_eda(
+                model_path=self.model_path,
+                dtype=jax_dtype,
+                cutoff_lr=self.lr_cutoff,
+                dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping
+            )
         else:
             potential = So3lrPotential(dtype=jax_dtype)
 

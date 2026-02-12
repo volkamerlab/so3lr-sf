@@ -5,13 +5,14 @@ This module provides the essential functions for creating EDA-enabled
 SO3LR potentials that can decompose energy into components.
 """
 
-import jax
 import jax.numpy as jnp
 from typing import Optional
 from mlff.mdx.potential.mlff_potential_sparse import MLFFPotentialSparse
 import pathlib
 
-def so3lr_potential_eda(model_path: Optional[str] = None, dtype=jnp.float64):
+def so3lr_potential_eda(model_path: Optional[str] = None, dtype=jnp.float64,
+                       cutoff_lr: float = 12.0,
+                       dispersion_energy_cutoff_lr_damping: float = 2.0):
     """
     Create a SO3LR potential with EDA components enabled.
 
@@ -21,6 +22,8 @@ def so3lr_potential_eda(model_path: Optional[str] = None, dtype=jnp.float64):
     Args:
         model_path: Path to SO3LR model parameters. If None, uses default path.
         dtype: JAX data type for the potential (jnp.float32 or jnp.float64).
+        cutoff_lr: Long-range cutoff distance in Angstroms (default: 12.0).
+        dispersion_energy_cutoff_lr_damping: Dispersion energy cutoff damping factor (default: 2.0).
 
     Returns:
         MLFF potential configured for EDA output
@@ -37,13 +40,15 @@ def so3lr_potential_eda(model_path: Optional[str] = None, dtype=jnp.float64):
     # Create MLFF potential with energy components enabled
     potential = MLFFPotentialSparse.create_from_ckpt_dir(
         ckpt_dir=workdir_path,
-        from_file=True,
+        from_file=False,
         long_range_kwargs=dict(
-            cutoff_lr=12.0,
-            dispersion_energy_cutoff_lr_damping=2.0,
+            cutoff_lr=cutoff_lr,
+            dispersion_energy_cutoff_lr_damping=dispersion_energy_cutoff_lr_damping,
             neighborlist_format_lr='ordered_sparse',
         ),
         dtype=dtype,
+        calculate_stress=False,
+        add_energy_shift=False,
         # Enable energy component output
         output_intermediate_quantities=[
             'mlff_atomic_energy',
