@@ -23,11 +23,8 @@ typing-extensions = "^4.15.0"
 jax = "0.5.3"
 jaxtyping = "^0.3.2"
 jaxlib = "==0.5.3"
-so3lr = { git = "https://github.com/hamzaibrahim21/so3lr.git", branch = "main", optional = false }
 mlff = { git = "https://github.com/hamzaibrahim21/mlff.git", branch = "v1.0-eda", optional = false }
-jraph = { git = "https://github.com/kabylda/jraph.git", branch = "master", optional = false }
-jax-md = { git = "https://github.com/kabylda/jax-md.git", branch = "main" , optional = false }
-glp = { git = "https://github.com/kabylda/glp.git", branch = "electrostatics_neighbourlist", optional = false }
+so3lr = { git = "https://github.com/hamzaibrahim21/so3lr.git", branch = "main", optional = false }
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.0.0"
