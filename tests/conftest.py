@@ -19,6 +19,7 @@ class MockSo3lrSfCalculator:
         self.model_path = kwargs.get('model_path', '/mock/model/path')
         self.lr_cutoff = kwargs.get('lr_cutoff', 12.0)
         self.dtype = kwargs.get('dtype', np.float32)
+        self.use_jax_md = kwargs.get('use_jax_md', False)  # Default to MLFF mode for tests
         self._calculator = Mock()
 
         # Configure mock calculator for ASE compatibility
@@ -53,7 +54,14 @@ class MockSo3lrSfCalculator:
         self._calculator.results = {}
         self._calculator.get_potential_energy = Mock(return_value=-100.0)
         self._calculator.get_forces = Mock(return_value=np.zeros((3, 3)))
-
+        
+    def _init_so3lr_calculator(self):
+        """Mock SO3LR-specific initialization method for structure optimization."""
+        # Create a fresh mock calculator with proper return values
+        self._calculator = Mock()
+        self._calculator.results = {}
+        self._calculator.get_potential_energy = Mock(return_value=-100.0)
+        self._calculator.get_forces = Mock(return_value=np.zeros((3, 3)))
 # Note: Calculator mocking is now handled by fixtures, not globally
 
 # Add src to Python path for testing
