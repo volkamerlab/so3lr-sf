@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="SO3LR-SF logo" width="400">
+</p>
+
 # **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
