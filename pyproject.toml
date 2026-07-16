@@ -59,3 +59,43 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["so3lr_sf.py", "src"]
+
+# ---------------------------------------------------------------------------
+# Coverage configuration (all outputs centralized under coverage/)
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src"]
+data_file = "coverage/.coverage"
+omit = [
+    "src/__pycache__/*",
+    "*/tests/*",
+    "*/test_*",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 40
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "coverage/htmlcov"
+title = "SO3LR-SF Test Coverage Report"
+
+[tool.coverage.xml]
+output = "coverage/coverage.xml"
+
+[tool.coverage.json]
+output = "coverage/coverage.json"

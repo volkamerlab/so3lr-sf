@@ -35,7 +35,6 @@ comment:
 ignore:
   - "tests/"
   - "docs/"
-  - "setup.py"
   - "**/__pycache__"
   - "*.pyc"
 

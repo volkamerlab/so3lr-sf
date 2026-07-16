@@ -65,17 +65,17 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          uv run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json -v
+          uv run pytest tests/ --cov=src --cov-report=xml:coverage/coverage.xml --cov-report=html:coverage/htmlcov --cov-report=term-missing --cov-report=json:coverage/coverage.json -v
 
       - name: Generate coverage badge
         run: |
-          uv run coverage-badge -o coverage.svg -f
+          uv run coverage-badge -o coverage/coverage.svg -f
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
+          files: ./coverage/coverage.xml
           flags: unittests
           name: codecov-ubuntu-latest-py3.12
           fail_ci_if_error: true
@@ -89,12 +89,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: |
-            .coverage
-            htmlcov/
-            coverage.xml
-            coverage.json
-            coverage.svg
+          path: coverage/
           retention-days: 30
 
   coverage-report:
@@ -115,7 +110,7 @@ jobs:
           echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
           python3 -c "
           import xml.etree.ElementTree as ET
-          tree = ET.parse('coverage.xml')
+          tree = ET.parse('coverage/coverage.xml')
           root = tree.getroot()
           line_rate = float(root.attrib.get('line-rate', 0)) * 100
           branch_rate = float(root.attrib.get('branch-rate', 0)) * 100

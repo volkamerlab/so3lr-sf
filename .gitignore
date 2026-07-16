@@ -9,25 +9,25 @@ runtime*
 so3lr/
 example_so3lr_per_atom_energies.py
 *.ini
+# keep pytest.ini tracked; the *.ini rule above would otherwise ignore it
+!pytest.ini
 */_*
 src/__pycache_*
 _*
 tests/test_data/*
-
-# Coverage reports
-coverage.xml
-htmlcov/
-.coverage
-*.cover
-.pytest_cache/
+Docker/*
 protein_ligand_analyzer/*
 example*
 debug*
-
-tests/test_data/*
-Docker/*
 trial*
 calculate*
 depracated*
-
 so3lr-sf_py/*
+
+# Tooling
+.qodo/
+
+# Coverage reports (all outputs centralized under coverage/)
+coverage/
+*.cover
+.pytest_cache/
