@@ -15,8 +15,6 @@ permissions:
 env:
   PYTHON_VERSION: '3.12'
   # Optimization environment variables
-  PIP_CACHE_DIR: ~/.cache/pip
-  POETRY_CACHE_DIR: ~/.cache/pypoetry
   JAX_ENABLE_X64: true
   JAX_PLATFORM_NAME: cpu
   TF_CPP_MIN_LOG_LEVEL: 2
@@ -34,42 +32,32 @@ jobs:
         with:
           fetch-depth: 0  # Fetch full history for better coverage
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+        run: uv python install ${{ matrix.python-version }}
 
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: latest
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Cache Poetry dependencies and installations
+      - name: Cache extra model/framework caches
         uses: actions/cache@v4
-        id: cache-poetry
         with:
           path: |
-            .venv
-            ~/.cache/pypoetry
-            ~/.cache/pip
             ~/.cache/huggingface
             ~/.jax_cache
             ~/.tensorflow
             ~/.keras
-            ~/.cache/git
-            ~/.gitconfig
-          key: poetry-full-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', '**/poetry.lock') }}
+          key: caches-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/uv.lock') }}
           restore-keys: |
-            poetry-full-${{ runner.os }}-${{ matrix.python-version }}-
-            poetry-${{ runner.os }}-${{ matrix.python-version }}-
+            caches-${{ runner.os }}-${{ matrix.python-version }}-
 
       - name: Install dependencies
         run: |
-          # Use --no-dev flag to skip development dependencies if they're not needed
-          poetry install --with test --no-interaction --no-ansi
+          uv sync --group test --frozen
 
       - name: Cache SO3LR model files
         uses: actions/cache@v4
@@ -96,11 +84,11 @@ jobs:
         env:
           SO3LR_MODEL_PATH: ${{ github.workspace }}/so3lr_models/so3lr/so3lr/params
         run: |
-          poetry run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json -v
+          uv run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json -v
 
       - name: Generate coverage badge
         run: |
-          poetry run coverage-badge -o coverage.svg -f
+          uv run coverage-badge -o coverage.svg -f
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
