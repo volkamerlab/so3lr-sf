@@ -17,7 +17,7 @@ _*
 tests/test_data/*
 Docker/*
 protein_ligand_analyzer/*
-example*
+
 debug*
 trial*
 calculate*
