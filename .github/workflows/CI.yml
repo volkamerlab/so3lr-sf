@@ -103,6 +103,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: coverage-report-ubuntu-latest-py3.12
+          # upload-artifact strips the `coverage/` prefix (dir becomes archive
+          # root), so restore the contents back under coverage/.
+          path: coverage
 
 
       - name: Coverage summary

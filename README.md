@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="SO3LR-SF logo" width="750">
+  <img src="logo/logo.png" alt="SO3LR-SF logo" width="750">
 </p>
 
 # **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
