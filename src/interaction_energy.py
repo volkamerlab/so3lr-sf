@@ -92,6 +92,10 @@ def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, cal
     # TODO: Move ligand far away to minimize interactions in a clever way to ensure it is further than cutoff
     positions = np.concatenate((protein_atoms.get_positions(), ligand_atoms.get_positions()+1000), axis=0) # Move ligand far away
     complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
+    # This combined (but separated) system is evaluated in a single call, so its
+    # total charge must be the sum of the protein and ligand charges — otherwise
+    # the non-interacting reference would silently be computed as neutral.
+    complex_atoms.info['charge'] = protein_atoms.info.get('charge', 0) + ligand_atoms.info.get('charge', 0)
     non_interaction_energy = calc.calculate_energy(complex_atoms)
     protein_atoms = len(protein_atoms.get_atomic_numbers())
 

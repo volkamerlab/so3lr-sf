@@ -161,6 +161,10 @@ results_steps_{#_steps}_fmax{FMAX}/
 - `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
 - `--steps INT`: Maximum optimization steps (default: 100)
 
+### Model Parameters
+- `--lr-cutoff FLOAT`: Long-range interaction cutoff distance in Angstroms (default: 1000.0)
+- `--dp`: Enable double precision (float64) for JAX-MD powered calculations
+
 ### Charge Parameters
 - `--charge-lig INT`: Charge of the ligand (default: 0)
 - `--charge-prot INT`: Charge of the protein (default: 0)

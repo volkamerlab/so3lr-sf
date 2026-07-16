@@ -140,6 +140,12 @@ Examples:
         action="store_true",
         help="Enable double precision (float64) for JAX-MD powered calculations"
     )
+    parser.add_argument(
+        "--lr-cutoff",
+        type=float,
+        default=1000.0,
+        help="Long-range interaction cutoff distance in Angstroms (default: 1000.0)"
+    )
 
     # Charge parameters
     parser.add_argument(
@@ -243,6 +249,7 @@ def main():
             calc_kwargs['output_per_atom_energy_components'] = True
         if args.dp:
             calc_kwargs['dp'] = True
+        calc_kwargs['lr_cutoff'] = args.lr_cutoff
 
         logger.debug(f"Calculator kwargs: {calc_kwargs}")
         logger.info("Initializing SO3LRSF calculator...")

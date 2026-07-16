@@ -17,6 +17,7 @@ try:
     import jax.numpy as jnp
     from jax_md import space
     from so3lr import to_jax_md, So3lrPotential, So3lrCalculator
+    from so3lr.jaxmd_utils import neighbor_list_featurizer
     _jax_available = True
 except ImportError:
     _jax_available = False
@@ -197,6 +198,14 @@ class So3lrSfCalculator:
         positions = jnp.array(atoms.get_positions(), dtype=jax_dtype)
         atomic_numbers = jnp.array(atoms.get_atomic_numbers(), dtype=jnp.int32)
 
+        # Total charge / spin come from the ASE atoms.info dict (set upstream from
+        # the CLI --charge-* args). so3lr's stock JAX-MD featurizer hardcodes
+        # total_charge=0, so we read them here and inject them below.
+        total_charge = float(atoms.info.get('charge', 0.0))
+        multiplicity = atoms.info.get('multiplicity')
+        num_unpaired_electrons = float(multiplicity - 1) if multiplicity is not None else 0.0
+        logger.debug(f"JAX-MD total_charge={total_charge}, num_unpaired_electrons={num_unpaired_electrons}")
+
         # Setup displacement function for free boundary conditions
         displacement, shift = space.free()
 
@@ -216,7 +225,9 @@ class So3lrSfCalculator:
             )
 
 
-        neighbor_fn, neighbor_fn_lr, energy_fn = to_jax_md(
+        # Neighbor lists are charge-independent, so reuse so3lr's to_jax_md for
+        # them and discard its charge-blind energy_fn.
+        neighbor_fn, neighbor_fn_lr, _ = to_jax_md(
             potential=potential,
             displacement_or_metric=displacement,
             box_size=None,
@@ -228,6 +239,25 @@ class So3lrSfCalculator:
             disable_cell_list=True,
             fractional_coordinates=False
         )
+
+        # Rebuild the energy_fn with the same featurizer so3lr uses, but stamp the
+        # real total_charge / num_unpaired_electrons onto the graph so the charge
+        # actually reaches the model (so3lr's featurizer otherwise hardcodes 0).
+        featurizer = neighbor_list_featurizer(
+            displacement, atomic_numbers, fractional_coordinates=False
+        )
+        total_charge_arr = jnp.asarray([total_charge], dtype=jax_dtype)
+        num_unpaired_arr = jnp.asarray([num_unpaired_electrons], dtype=jax_dtype)
+
+        def energy_fn(R, neighbor, neighbor_lr, has_aux=False, **energy_fn_kwargs):
+            graph = featurizer(R, neighbor, neighbor_lr, **energy_fn_kwargs)
+            graph = graph._replace(
+                total_charge=total_charge_arr,
+                num_unpaired_electrons=num_unpaired_arr,
+            )
+            if has_aux:
+                return potential(graph, has_aux=True)
+            return potential(graph).sum()
 
         # Initialize neighbor lists
         nbrs = neighbor_fn.allocate(positions, box=None)
