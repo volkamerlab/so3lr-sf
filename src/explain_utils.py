@@ -433,7 +433,7 @@ def compute_energy_differences(
 
     Calculates interaction energy differences by comparing atoms in the complex
     vs. their isolated states: complex_part - isolated for each energy component.
-    Maps internal component names to user-friendly names (e.g., 'mlff_atomic_energy' -> 'MLFF').
+    Maps internal component names to user-friendly names (e.g., 'nn_energy' -> 'MLFF').
 
     Args:
         protein_components: Per-atom energy components for isolated protein
@@ -451,7 +451,7 @@ def compute_energy_differences(
     """
     # Component mapping to standard names
     component_mapping = {
-        'mlff_atomic_energy': 'MLFF',
+        'nn_energy': 'MLFF',
         'zbl_repulsion': 'ZBL',
         'electrostatic_energy': 'Electrostatics',
         'dispersion_energy': 'Dispersion'

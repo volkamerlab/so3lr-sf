@@ -136,11 +136,6 @@ Examples:
 
     # Model parameters
     parser.add_argument(
-        "--model-path",
-        type=str,
-        help="Path to SO3LR model parameters (auto-detected if not specified)"
-    )
-    parser.add_argument(
         "--dp",
         action="store_true",
         help="Enable double precision (float64) for JAX-MD powered calculations"
@@ -251,7 +246,7 @@ def main():
 
         logger.debug(f"Calculator kwargs: {calc_kwargs}")
         logger.info("Initializing SO3LRSF calculator...")
-        calc = So3lrSfCalculator(model_path=args.model_path, **calc_kwargs)
+        calc = So3lrSfCalculator(**calc_kwargs)
 
         # Initialize optimization log
         optimization_log = [] if args.opt_log else None

@@ -39,8 +39,13 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 
 ### Prerequisites
 - Python 3.12 or higher
-- Poetry (package manager)
-- curl (for downloading model parameters)
+- [uv](https://docs.astral.sh/uv/) (package & environment manager)
+
+If you don't have `uv` yet:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 ### Installation Steps
 
@@ -49,42 +54,35 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 git clone https://github.com/volkamerlab/so3lr-sf.git
 cd so3lr-sf
 
-# Run the setup script (installs dependencies and downloads SO3LR model parameters)
-python setup.py
+# Create the environment and install all dependencies (including the test group)
+uv sync
 ```
 
-The setup script will:
-1. Install all dependencies using Poetry
-2. Download SO3LR model parameters from the official repository
-3. Verify the installation
+### Activate the Environment
 
-### Manual Installation (Alternative)
-
-If you prefer manual installation:
+You can either activate the `.venv/` created by `uv sync`:
 
 ```bash
-# Clone the repository
-git clone https://github.com/volkamerlab/so3lr-sf.git
-cd so3lr-sf
+# Linux / macOS
+source .venv/bin/activate
 
-# Install dependencies
-poetry install --with test
-
-# Download model parameters
-mkdir -p so3lr
-cd so3lr
-curl -L https://github.com/general-molecular-simulations/so3lr/archive/main.tar.gz | tar -xz --strip-components=2 so3lr-main/so3lr/params
-cd ..
+# Windows (PowerShell)
+.venv\Scripts\Activate.ps1
 ```
+
+Once activated, run commands directly (`pytest`, `python so3lr_sf.py ...`).
+
+Alternatively, skip activation and prefix commands with `uv run` (e.g.
+`uv run pytest`), which uses the project environment automatically.
 
 ### Verify Installation
 
 ```bash
 # Run tests to verify everything works
-poetry run pytest
+uv run pytest
 
 # Or test with a simple calculation
-poetry run python so3lr_sf.py --protein tests/test_data/alanine.xyz --ligands tests/test_data/water.sdf
+uv run python so3lr_sf.py --protein tests/test_data/alanine.xyz --ligands tests/test_data/water.sdf
 ```
 
 </details>
@@ -96,7 +94,6 @@ poetry run python so3lr_sf.py --protein tests/test_data/alanine.xyz --ligands te
 ```
 src/
 ├── calculator.py                      # SO3LR calculator implementation
-├── config.py                          # Configuration management and model path discovery
 ├── interaction_energy.py              # Main energy calculation functions
 ├── optimization.py                    # Structure optimization through constraint or free optimization
 ├── constraint.py                      # Handle optimization constraints either by-atom or by-residue
@@ -162,9 +159,6 @@ results_steps_{#_steps}_fmax{FMAX}/
 - `--optimizer {FIRE,FIRE2,LBFGS,BFGS,BFGSLineSearch,LBFGSLineSearch,GPMin,MDMin,ODE12r,GoodOldQuasiNewton,QuasiNewton}`: Optimization algorithm (default: FIRE)
 - `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
 - `--steps INT`: Maximum optimization steps (default: 100)
-
-### Model Parameters
-- `--model-path PATH`: Path to SO3LR model parameters (auto-detected if not specified)
 
 ### Charge Parameters
 - `--charge-lig INT`: Charge of the ligand (default: 0)

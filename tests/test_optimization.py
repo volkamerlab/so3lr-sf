@@ -149,16 +149,15 @@ class TestOptimizeStructure:
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_optimize_structure_with_real_calculator(self, water_files, temp_dir, so3lr_model_path):
+    def test_optimize_structure_with_real_calculator(self, water_files, temp_dir):
         """Test optimization with actual SO3LR calculator (if available)."""
-        from src.calculator import So3lrSfCalculator
-
-        # Check if SO3LR model is available
-        if not Path(so3lr_model_path).exists():
-            pytest.skip(f"SO3LR model not available at {so3lr_model_path}")
+        try:
+            from src.calculator import So3lrSfCalculator
+        except ImportError as e:
+            pytest.skip(f"so3lr / JAX-MD stack not available: {e}")
 
         try:
-            calc = So3lrSfCalculator(model_path=so3lr_model_path)
+            calc = So3lrSfCalculator()
             atoms = load_ase_structure(water_files['xyz'])[0]
             output_path = temp_dir / "optimized_real.xyz"
 
@@ -388,6 +387,13 @@ class TestStructureOpsIntegration:
     def test_real_optimization_water_position_change(self, water_files, temp_dir, real_calculator):
         """Test real optimization with position change verification for water."""
         atoms = load_ase_structure(water_files['xyz'])[0]
+
+        # The bundled water.xyz is already near equilibrium (max|F| < 0.1 eV/A),
+        # so FIRE would converge at step 0 with no movement. Perturb one atom so
+        # there is a real force to relax and the optimizer actually moves atoms.
+        perturbed = atoms.get_positions()
+        perturbed[1] += np.array([0.3, 0.0, 0.0])  # stretch an O-H bond
+        atoms.set_positions(perturbed)
         original_positions = atoms.get_positions().copy()
 
         output_path = temp_dir / "optimized_water_real.xyz"
@@ -395,8 +401,8 @@ class TestStructureOpsIntegration:
             atoms,
             calc=real_calculator,
             optimizer='FIRE',
-            fmax=0.1,  # Less strict for testing
-            steps=20,   # Limit steps
+            fmax=0.05,  # tight enough to force relaxation of the perturbed bond
+            steps=50,
             output_path=output_path
         )
 

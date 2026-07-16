@@ -16,17 +16,13 @@ try:
     import jax
     import jax.numpy as jnp
     from jax_md import space
-    from so3lr import to_jax_md, So3lrPotential
+    from so3lr import to_jax_md, So3lrPotential, So3lrCalculator
     _jax_available = True
 except ImportError:
     _jax_available = False
 
-# Standard SO3LR calculator
-from mlff.md.calculator_sparse import mlffCalculatorSparse
-
 from .utils import validate_structure
 from .molecule_loader import load_ase_structure
-from .config import get_default_model_path
 from .jaxmd_eda import so3lr_potential_eda
 
 logger = logging.getLogger(__name__)
@@ -40,7 +36,6 @@ class So3lrSfCalculator:
     to avoid redundant computations.
 
     Attributes:
-        model_path (str): Path to SO3LR model parameters
         lr_cutoff (float): Long-range interaction cutoff distance
         dtype (type): Numerical precision for calculations
         dp (bool): Double precision flag
@@ -49,8 +44,7 @@ class So3lrSfCalculator:
 
     def __init__(
         self,
-        model_path: Optional[str] = None,
-        lr_cutoff: float = 12.0,
+        lr_cutoff: float = 1000.0,
         dispersion_energy_lr_cutoff_damping: float = 2.0,
         dtype: type = np.float32,
         output_per_atom_energy_components: bool = False,
@@ -59,16 +53,16 @@ class So3lrSfCalculator:
         """
         Initialize the SO3LR-SF energy calculator.
 
+        The SO3LR model parameters are always loaded from the bundled `so3lr`
+        package (via `So3lrPotential` / `So3lrCalculator`), so no model path
+        is required.
+
         Args:
-            model_path: Path to SO3LR model parameters. If None, auto-detects.
             lr_cutoff: Long-range cutoff distance in Angstroms (default: 12.0)
             dispersion_energy_lr_cutoff_damping: Dispersion energy cutoff damping factor (default: 2.0)
             dtype: Numerical precision - np.float32 for speed, np.float64 for accuracy
             output_per_atom_energy_components: Enable per-atom energy decomposition
             dp: Enable double precision (float64). Overrides dtype when True.
-
-        Raises:
-            FileNotFoundError: If model_path is None and automatic detection fails
 
         Example:
             >>> # Basic calculator (JAX-MD, if failed, falls back to MLFF)
@@ -77,10 +71,6 @@ class So3lrSfCalculator:
             >>> # Calculator with EDA (JAX-MD, if failed, falls back to MLFF)
             >>> calc = So3lrSfCalculator(output_per_atom_energy_components=True)
         """
-        # Auto-detect model path if not provided
-        if model_path is None:
-            model_path = get_default_model_path()
-
         # Handle double precision flag
         if dp:
             self.dtype = np.float64
@@ -93,7 +83,6 @@ class So3lrSfCalculator:
             if _jax_available and dtype != np.float64:
                 jax.config.update("jax_enable_x64", False)
 
-        self.model_path = model_path
         self.lr_cutoff = lr_cutoff
         self.dispersion_energy_lr_cutoff_damping = dispersion_energy_lr_cutoff_damping
         self.dp = dp
@@ -116,7 +105,7 @@ class So3lrSfCalculator:
     def _init_so3lr_calculator(self) -> None:
         """Initialize the SO3LR calculator."""
         try:
-            logger.debug(f"Initializing SO3LR calculator with model path: {self.model_path}")
+            logger.debug("Initializing SO3LR calculator from So3lrPotential")
             logger.debug(f"Calculator parameters: lr_cutoff={self.lr_cutoff}, "
                         f"dispersion_damping={self.dispersion_energy_lr_cutoff_damping}, "
                         f"output_per_atom={self.output_per_atom_energy_components}")
@@ -141,11 +130,9 @@ class So3lrSfCalculator:
                 log.setLevel(logging.CRITICAL)
 
             try:
-                self._calculator = mlffCalculatorSparse.create_from_ckpt_dir(
-                    ckpt_dir=self.model_path,
+                self._calculator = So3lrCalculator(
                     lr_cutoff=self.lr_cutoff,
-                    dispersion_energy_lr_cutoff_damping=self.dispersion_energy_lr_cutoff_damping,
-                    from_file=False,
+                    dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping,
                     calculate_stress=False,
                     dtype=self.dtype,
                     add_energy_shift=False,
@@ -214,15 +201,19 @@ class So3lrSfCalculator:
         displacement, shift = space.free()
 
         # Choose potential based on EDA requirements
+        print(f"Output per-atom energy components enabled: {self.lr_cutoff}, {self.dispersion_energy_lr_cutoff_damping}")
         if self.output_per_atom_energy_components:
             potential = so3lr_potential_eda(
-                model_path=self.model_path,
                 dtype=jax_dtype,
                 cutoff_lr=self.lr_cutoff,
                 dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping
             )
         else:
-            potential = So3lrPotential(dtype=jax_dtype)
+            potential = So3lrPotential(
+                dtype=jax_dtype,
+                lr_cutoff=self.lr_cutoff,
+                dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping,
+            )
 
 
         neighbor_fn, neighbor_fn_lr, energy_fn = to_jax_md(
@@ -296,7 +287,7 @@ class So3lrSfCalculator:
 
         Returns:
             dict or None: Dictionary mapping component names to per-atom energy arrays.
-                         Keys typically include 'mlff_atomic_energy', 'zbl_repulsion',
+                         Keys typically include 'nn_energy', 'zbl_repulsion',
                          'electrostatic_energy', 'dispersion_energy'. Returns None if
                          per-atom components were not enabled or no calculation performed.
 
@@ -323,7 +314,7 @@ class So3lrSfCalculator:
         # Try JAX-MD aux data first
         if hasattr(self, '_last_aux_data') and self._last_aux_data:
             components = {}
-            component_keys = ['mlff_atomic_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy']
+            component_keys = ['nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy']
 
             for component_key in component_keys:
                 if component_key in self._last_aux_data:

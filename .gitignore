@@ -3,7 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
+fep-benchmark-runtime/
+runtime*
 # Project specific
 so3lr/
 example_so3lr_per_atom_energies.py

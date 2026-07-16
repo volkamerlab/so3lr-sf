@@ -426,7 +426,6 @@ def protein_ligand_interaction(
 
     logger.info(f"Protein: {protein_path}")
     logger.info(f"Ligand: {ligand_path}")
-    logger.debug(f"Using calculator with model: {calc.model_path}")
 
     exp_mode = any(exp_outputs) if exp_outputs else False
 

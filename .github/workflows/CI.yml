@@ -59,30 +59,11 @@ jobs:
         run: |
           uv sync --group test --frozen
 
-      - name: Cache SO3LR model files
-        uses: actions/cache@v4
-        id: cache-so3lr
-        with:
-          path: so3lr_models
-          key: so3lr-models-v2-${{ runner.os }}
-          restore-keys: |
-            so3lr-models-v2-
-            so3lr-models-
-
-      - name: Download SO3LR model files
-        if: steps.cache-so3lr.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p so3lr_models
-          cd so3lr_models
-          git clone --depth 1 --filter=blob:none --sparse https://github.com/general-molecular-simulations/so3lr.git
-          cd so3lr
-          git sparse-checkout set so3lr/params
-          echo "Downloaded SO3LR models to: $(pwd)/so3lr/params"
-          ls -la so3lr/params
+      # NOTE: SO3LR model parameters ship as package data with the installed
+      # `so3lr` package (loaded via So3lrPotential / So3lrCalculator), so no
+      # separate model download or SO3LR_MODEL_PATH env var is needed.
 
       - name: Run tests with coverage
-        env:
-          SO3LR_MODEL_PATH: ${{ github.workspace }}/so3lr_models/so3lr/so3lr/params
         run: |
           uv run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json -v
 

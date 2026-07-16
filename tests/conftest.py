@@ -16,7 +16,6 @@ import numpy as np
 class MockSo3lrSfCalculator:
     def __init__(self, *args, **kwargs):
         self.output_per_atom_energy_components = kwargs.get('output_per_atom_energy_components', False)
-        self.model_path = kwargs.get('model_path', '/mock/model/path')
         self.lr_cutoff = kwargs.get('lr_cutoff', 12.0)
         self.dtype = kwargs.get('dtype', np.float32)
         self.use_jax_md = kwargs.get('use_jax_md', False)  # Default to MLFF mode for tests
@@ -37,7 +36,7 @@ class MockSo3lrSfCalculator:
             raise ValueError("Per-atom energy components not enabled")
 
         return {
-            'mlff_atomic_energy': np.array([0.1, 0.2, 0.3]),
+            'nn_energy': np.array([0.1, 0.2, 0.3]),
             'zbl_repulsion': np.array([0.0, 0.0, 0.0]),
             'electrostatic_energy': np.array([0.05, 0.1, 0.15]),
             'dispersion_energy': np.array([-0.01, -0.02, -0.03])
@@ -133,15 +132,18 @@ def mock_calculator():
 
 
 @pytest.fixture
-def real_calculator(so3lr_model_path):
-    """Provide real So3lrSfCalculator for integration tests."""
-    from pathlib import Path
-    if not Path(so3lr_model_path).exists():
-        pytest.skip(f"SO3LR model not available at {so3lr_model_path}")
+def real_calculator():
+    """Provide real So3lrSfCalculator for integration tests.
 
-    from src.calculator import So3lrSfCalculator
+    Model params are loaded from the installed so3lr package; the test is
+    skipped if so3lr (and its params) are not available.
+    """
+    try:
+        from src.calculator import So3lrSfCalculator
+    except ImportError as e:
+        pytest.skip(f"so3lr / JAX-MD stack not available: {e}")
+
     return So3lrSfCalculator(
-        model_path=so3lr_model_path,
         output_per_atom_energy_components=False
     )
 
@@ -297,31 +299,10 @@ def alanine_files(test_data_dir):
 
 
 @pytest.fixture
-def so3lr_model_path():
-    """Get real SO3LR model path for testing - must exist."""
-    from src.config import get_so3lr_model_path
-    model_path = get_so3lr_model_path()
-
-    if model_path is None:
-        raise FileNotFoundError("SO3LR model parameters directory not found. Please install so3lr package or set SO3LR_MODEL_PATH environment variable.")
-
-    # Verify the path actually exists
-    from pathlib import Path
-    path = Path(model_path)
-    if not path.exists():
-        raise FileNotFoundError(f"SO3LR model directory does not exist: {model_path}")
-
-    if not path.is_dir():
-        raise NotADirectoryError(f"SO3LR model path is not a directory: {model_path}")
-
-    return model_path
-
-
-@pytest.fixture
 def sample_energy_components():
     """Sample per-atom energy components for testing explainability."""
     return {
-        'mlff_atomic_energy': np.array([0.1, 0.2, 0.3, 0.4, 0.5]),
+        'nn_energy': np.array([0.1, 0.2, 0.3, 0.4, 0.5]),
         'zbl_repulsion': np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
         'electrostatic_energy': np.array([0.05, 0.1, 0.15, 0.2, 0.25]),
         'dispersion_energy': np.array([-0.01, -0.02, -0.03, -0.04, -0.05])

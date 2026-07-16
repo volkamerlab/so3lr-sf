@@ -58,7 +58,7 @@ class TestExplainUtilsModule:
     def sample_energy_components(self):
         """Sample energy components for testing."""
         return {
-            'mlff_atomic_energy': np.array([0.1, 0.2, 0.3, 0.4, 0.5]),
+            'nn_energy': np.array([0.1, 0.2, 0.3, 0.4, 0.5]),
             'zbl_repulsion': np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
             'electrostatic_energy': np.array([0.05, 0.1, 0.15, 0.2, 0.25]),
             'dispersion_energy': np.array([-0.01, -0.02, -0.03, -0.04, -0.05])
@@ -535,17 +535,17 @@ class TestExplainUtilsModule:
         n_ligand_atoms = 3
 
         protein_components = {
-            'mlff_atomic_energy': np.array([0.1, 0.2, 0.3]),
+            'nn_energy': np.array([0.1, 0.2, 0.3]),
             'electrostatic_energy': np.array([0.01, 0.02, 0.03])
         }
 
         ligand_components = {
-            'mlff_atomic_energy': np.array([0.05, 0.1, 0.15]),
+            'nn_energy': np.array([0.05, 0.1, 0.15]),
             'electrostatic_energy': np.array([0.005, 0.01, 0.015])
         }
 
         complex_components = {
-            'mlff_atomic_energy': np.array([0.1, 0.2, 0.3, 0.06, 0.11, 0.16]),  # protein + ligand
+            'nn_energy': np.array([0.1, 0.2, 0.3, 0.06, 0.11, 0.16]),  # protein + ligand
             'electrostatic_energy': np.array([0.01, 0.02, 0.03, 0.006, 0.011, 0.016])
         }
 
@@ -569,8 +569,8 @@ class TestExplainUtilsModule:
     @pytest.mark.unit
     def test_compute_energy_differences_missing_components(self):
         """Test energy difference computation with missing components."""
-        protein_components = {'mlff_atomic_energy': np.array([0.1, 0.2])}
-        ligand_components = {'mlff_atomic_energy': np.array([0.05, 0.1])}
+        protein_components = {'nn_energy': np.array([0.1, 0.2])}
+        ligand_components = {'nn_energy': np.array([0.05, 0.1])}
         complex_components = {'different_component': np.array([0.1, 0.2, 0.05, 0.1])}
 
         ligand_diff, protein_diff = compute_energy_differences(
@@ -631,13 +631,13 @@ class TestExplainUtilsModule:
         np.random.seed(42)  # For reproducible tests
 
         protein_alone = {
-            'mlff_atomic_energy': np.random.normal(-5.0, 1.0, n_protein),
+            'nn_energy': np.random.normal(-5.0, 1.0, n_protein),
             'electrostatic_energy': np.random.normal(0.0, 0.5, n_protein),
             'dispersion_energy': np.random.normal(-0.1, 0.05, n_protein)
         }
 
         ligand_alone = {
-            'mlff_atomic_energy': np.random.normal(-2.0, 0.5, n_ligand),
+            'nn_energy': np.random.normal(-2.0, 0.5, n_ligand),
             'electrostatic_energy': np.random.normal(0.0, 0.2, n_ligand),
             'dispersion_energy': np.random.normal(-0.05, 0.02, n_ligand)
         }
@@ -699,9 +699,9 @@ class TestExplainUtilsModule:
     @pytest.mark.unit
     def test_compute_energy_differences_size_mismatch(self):
         """Test energy difference computation with size mismatches."""
-        protein_components = {'mlff_atomic_energy': np.array([0.1, 0.2])}
-        ligand_components = {'mlff_atomic_energy': np.array([0.05])}
-        complex_components = {'mlff_atomic_energy': np.array([0.1, 0.2, 0.06, 0.11])}  # 4 total
+        protein_components = {'nn_energy': np.array([0.1, 0.2])}
+        ligand_components = {'nn_energy': np.array([0.05])}
+        complex_components = {'nn_energy': np.array([0.1, 0.2, 0.06, 0.11])}  # 4 total
 
         # n_protein=2, n_ligand=1, but complex has 4 atoms
         ligand_diff, protein_diff = compute_energy_differences(

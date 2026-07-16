@@ -24,27 +24,9 @@ class TestSo3lrSfCalculator:
     def test_calculator_initialization_basic(self, mock_calculator):
         """Test basic calculator initialization with mock."""
         # Use the mock calculator from fixture
-        assert hasattr(mock_calculator, 'model_path')
         assert hasattr(mock_calculator, 'lr_cutoff')
         assert hasattr(mock_calculator, 'dtype')
         assert hasattr(mock_calculator, 'output_per_atom_energy_components')
-
-    @pytest.mark.unit
-    def test_calculator_initialization_no_model_found(self, mock_calculator):
-        """Test behavior when model path is None or empty."""
-        # Test with None model path
-        assert mock_calculator is not None
-        
-        mock_calculator.model_path = None
-        assert mock_calculator.model_path is None
-
-        # Test with empty string model path
-        mock_calculator.model_path = ""
-        assert mock_calculator.model_path == ""
-
-        # Calculator should still be functional with mock
-        energy = mock_calculator.calculate_energy("dummy_atoms")
-        assert energy == -100.0
 
     @pytest.mark.unit
     def test_calculator_initialization_failure(self, mock_calculator):
@@ -86,7 +68,7 @@ class TestSo3lrSfCalculator:
 
         # Mock returns predefined components
         assert isinstance(components, dict)
-        expected_keys = {'mlff_atomic_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'}
+        expected_keys = {'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'}
         assert set(components.keys()) == expected_keys
 
     @pytest.mark.unit
@@ -102,32 +84,15 @@ class TestSo3lrSfCalculator:
     # ================================================================================================
     # The following tests use the actual SO3LR calculator with real model files.
     # These tests require:
-    # 1. SO3LR model files to be available (checked via so3lr_model_path fixture)
+    # 1. The so3lr package (with bundled model params) to be installed
     # 2. Real energy calculations with actual molecular structures
     # 3. Realistic energy ranges and validation
     #
     # These tests may be skipped if:
-    # - SO3LR model files are not found
+    # - The so3lr / JAX-MD stack is not installed
     # - Real calculations fail due to environment issues
     # - Dependencies are missing
     # ================================================================================================
-
-    @pytest.mark.integration
-    def test_model_path_discovery(self, so3lr_model_path):
-        """Test that SO3LR model path can be discovered and is valid."""
-        from pathlib import Path
-
-        # Verify the path was found
-        assert so3lr_model_path is not None
-        assert isinstance(so3lr_model_path, str)
-
-        # Verify the path exists and is a directory
-        path = Path(so3lr_model_path)
-        assert path.exists(), f"Model path does not exist: {so3lr_model_path}"
-        assert path.is_dir(), f"Model path is not a directory: {so3lr_model_path}"
-
-        # Print the actual path for debugging
-        print(f"Found SO3LR model parameters at: {so3lr_model_path}")
 
     # @pytest.mark.integration
     @pytest.mark.slow
@@ -148,7 +113,7 @@ class TestSo3lrSfCalculator:
             print(f"Water energy (REAL): {energy:.4f}")
 
         except Exception as e:
-            pytest.raises(f"SO3LR calculation failed: {e}")
+            pytest.fail(f"SO3LR calculation failed: {e}")
 
     @pytest.mark.integration
     @pytest.mark.slow
@@ -166,7 +131,7 @@ class TestSo3lrSfCalculator:
             print(f"Alanine energy (REAL): {energy:.4f}")
 
         except Exception as e:
-            pytest.raises(f"SO3LR calculation failed: {e}")
+            pytest.fail(f"SO3LR calculation failed: {e}")
 
     @pytest.mark.integration
     @pytest.mark.slow
@@ -187,21 +152,14 @@ class TestSo3lrSfCalculator:
             print(f"Energy difference: {alanine_energy - water_energy:.4f}")
 
         except Exception as e:
-            pytest.raises(f"SO3LR calculation failed: {e}")
+            pytest.fail(f"SO3LR calculation failed: {e}")
 
     @pytest.mark.integration
     @pytest.mark.slow
-    def test_calculator_per_atom_components_real(self, water_files, so3lr_model_path):
+    def test_calculator_per_atom_components_real(self, water_files):
         """Test per-atom energy components with real calculator."""
-        from pathlib import Path
-
-
-        if not Path(so3lr_model_path).exists():
-            pytest.raises(f"SO3LR model not available at {so3lr_model_path}")
-
         try:
             calc = So3lrSfCalculator(
-                model_path=so3lr_model_path,
                 output_per_atom_energy_components=True
             )
 
@@ -214,7 +172,7 @@ class TestSo3lrSfCalculator:
             assert len(components) > 0
 
             # Assert the specific component keys that SO3LR returns
-            expected_keys = {'mlff_atomic_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'}
+            expected_keys = {'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'}
             actual_keys = set(components.keys())
             assert actual_keys == expected_keys, f"Expected {expected_keys}, but got {actual_keys}"
 
@@ -227,7 +185,7 @@ class TestSo3lrSfCalculator:
             print(f"Total energy (REAL): {energy:.4f}")
 
         except Exception as e:
-            pytest.raises(f"SO3LR calculation failed: {e}")
+            pytest.fail(f"SO3LR calculation failed: {e}")
 
     @pytest.mark.unit
     def test_calculator_properties(self, mock_calculator):
@@ -237,7 +195,6 @@ class TestSo3lrSfCalculator:
         mock_calculator.dtype = np.float64
         mock_calculator.output_per_atom_energy_components = True
 
-        assert hasattr(mock_calculator, 'model_path')
         assert mock_calculator.lr_cutoff == 15.0
         assert mock_calculator.dtype == np.float64
         assert mock_calculator.output_per_atom_energy_components is True
