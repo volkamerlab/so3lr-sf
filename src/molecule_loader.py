@@ -5,13 +5,16 @@ This module provides functions for loading molecular structures from various fil
 with proper handling of multi-molecule files.
 """
 
-from typing import Union, List, Dict, Tuple
+from typing import Union, List, Dict, Tuple, Optional
 from pathlib import Path
 from ase import Atoms
 from ase.io import read
 from rdkit import Chem
 import MDAnalysis as mda
 import prolif as plf
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def validate_structure(atom_obj: Atoms):
@@ -245,3 +248,60 @@ def load_molecule_to_prolif(
 
     except Exception as e:
         raise ValueError(f"Could not load molecule from {file_path}: {e}")
+
+
+def extract_ligands(
+    multi_structure_file: Union[str, Path],
+    output_dir: Optional[Union[str, Path]] = None,
+    naming_prefix: str = "ligand"
+) -> List[str]:
+    """
+    Extract individual ligands from multi-structure files (SDF, XYZ, PDB with multiple structures).
+
+    This function reads a file containing multiple structures and saves each one
+    as a separate XYZ file for individual processing.
+
+    Args:
+        multi_structure_file: Path to file containing multiple structures
+        output_dir: Directory to save individual ligand files
+        naming_prefix: Prefix for output filenames
+
+    Returns:
+        List[str]: Paths to individual ligand XYZ files
+
+    Example:
+        >>> # Extract ligands from multi-molecule SDF
+        >>> ligand_files = extract_ligands("ligands.sdf", output_dir="individual_ligands")
+        >>> for lig_file in ligand_files:
+        ...     energy = energy_calc_fn(lig_file)
+        ...     print(f"{lig_file}: {energy:.3f} eV")
+    """
+    from .utils import write_structure  # Import here to avoid circular imports
+
+    multi_structure_file = Path(multi_structure_file)
+
+    if output_dir is None:
+        output_dir = multi_structure_file.parent / f"{multi_structure_file.stem}_individual"
+    else:
+        output_dir = Path(output_dir)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Read all structures
+    structures = load_ase_structure(multi_structure_file, index=":")
+
+    output_files = []
+
+    for i, atoms in enumerate(structures):
+
+        # Generate filename
+        output_filename = f"{naming_prefix}_{i+1:03d}.xyz"
+        output_path = output_dir / output_filename
+
+        # Save structure
+        output_file = write_structure(atoms, output_path)
+        output_files.append(output_file)
+
+    logger.info(f"Extracted {len(output_files)} structures to {output_dir}")
+
+    return output_files

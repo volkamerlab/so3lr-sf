@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo/logo.png" alt="SO3LR-SF logo" width="750">
+</p>
+
 # **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -35,8 +39,13 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 
 ### Prerequisites
 - Python 3.12 or higher
-- Poetry (package manager)
-- curl (for downloading model parameters)
+- [uv](https://docs.astral.sh/uv/) (package & environment manager)
+
+If you don't have `uv` yet:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 ### Installation Steps
 
@@ -45,42 +54,36 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 git clone https://github.com/volkamerlab/so3lr-sf.git
 cd so3lr-sf
 
-# Run the setup script (installs dependencies and downloads SO3LR model parameters)
-python setup.py
+# Create the environment and install all dependencies (including the test group)
+uv sync
 ```
 
-The setup script will:
-1. Install all dependencies using Poetry
-2. Download SO3LR model parameters from the official repository
-3. Verify the installation
+### Activate the Environment
 
-### Manual Installation (Alternative)
-
-If you prefer manual installation:
+You can either activate the `.venv/` created by `uv sync`:
 
 ```bash
-# Clone the repository
-git clone https://github.com/volkamerlab/so3lr-sf.git
-cd so3lr-sf
+# Linux / macOS
+source .venv/bin/activate
 
-# Install dependencies
-poetry install --with test
-
-# Download model parameters
-mkdir -p so3lr
-cd so3lr
-curl -L https://github.com/general-molecular-simulations/so3lr/archive/main.tar.gz | tar -xz --strip-components=2 so3lr-main/so3lr/params
-cd ..
+# Windows (PowerShell)
+.venv\Scripts\Activate.ps1
 ```
+
+`uv sync` also installs the `so3lrsf` command-line tool into the environment.
+Once the environment is activated, run commands directly (`pytest`, `so3lrsf ...`).
+
+Alternatively, skip activation and prefix commands with `uv run` (e.g.
+`uv run pytest`), which uses the project environment automatically.
 
 ### Verify Installation
 
 ```bash
 # Run tests to verify everything works
-poetry run pytest
+uv run pytest
 
 # Or test with a simple calculation
-poetry run python so3lr_sf.py --protein tests/test_data/alanine.xyz --ligands tests/test_data/water.sdf
+uv run so3lrsf --protein tests/test_data/alanine.xyz --ligands tests/test_data/water.sdf
 ```
 
 ### Docker Installation
@@ -117,26 +120,40 @@ docker run --rm so3lr-sf:latest pytest tests/ --verbose
 ```
 src/
 ├── calculator.py                      # SO3LR calculator implementation
-├── config.py                          # Configuration management and model path discovery
 ├── interaction_energy.py              # Main energy calculation functions
-├── structure_ops.py                   # Structure manipulation and optimization
+├── optimization.py                    # Structure optimization through constraint or free optimization
+├── constraint.py                      # Handle optimization constraints either by-atom or by-residue
+├── trim.py                            # Trim protein structure either by-atom or by-residue
 ├── explainability.py                  # Energy-based explainability analysis and visualization
 ├── explain_utils.py                   # Utility functions for explainability analysis
 ├── molecule_loader.py                 # Molecule loading and file format handling
 ├── utils.py                           # General utility functions and I/O operations
+├── visualizer.py                      # 3D Protein-Ligand Energy Visualizer for PyMOL
 └── __init__.py                        # Package interface
 ```
-### Output directory Structure
+### Full pipeline output directory structure
 ```
-results_steps_100_fmax0.05/
-├── results_summary.json           # Main results file
-├── optimization_log.json          # Optimization details (if --opt-log)
-├── individual_ligands/             # Extracted ligands (for multi-SDF)
-├── opt_ligand/                     # Optimized ligand structures
-├── opt_complexes/                  # Optimized complex structures
-└── ligand_exp/                     # Explainability heatmaps
-    ├── ligand_001_heatmap.png
-    └── ligand_002_heatmap.png
+results_steps_{#_steps}_fmax{FMAX}/
+├── individual_ligands/                     # Extracted ligands (for multi-SDF)
+│   └── ligand_001.sdf
+├── ligand_exp/                             # Explainability heatmaps
+│   └── ligand_001_heatmap.png
+├── pl_2d_exp/                              # 2D protein-ligand interaction heatmaps
+│   └── ligand_001_protein_interaction.png
+├── pl_3d_exp/                              # 3D protein-ligand interaction heatmaps
+│   ├── complex_ligand_001_constrained_opt.pdb
+│   └── ligand_001_3d_visualization.pml
+├── constrained_opt_complexes/              # Optimized protein-ligand complexes
+│   └── ligand_001_complex_constrained_opt.xyz
+├── constrained_opt_components/             # Extracted optimized protein and ligand components
+│   ├── {protein_name}_ligand_001_constrained_opt.xyz
+│   └── ligand_001_constrained_opt.xyz
+├── free_opt_ligands/                       # Free ligands for strain calculation (strain modes)
+│   └── ligand_001_free_opt.xyz
+├── free_opt_protein/                       # Free protein for strain calculation (strain-prot mode)
+│   └── {protein_name}_free_opt.xyz
+├── results_summary.json                    # Main results file
+└── optimization_log.json                   # Optimization details
 ```
 
 </details>
@@ -150,24 +167,33 @@ results_steps_100_fmax0.05/
 - `--ligands`: Path to ligand file, directory, or multi-SDF file
 
 ### Workflow Options
-- `--trim`: Trim protein around ligand(s) before calculation
-- `--optimize`: Optimize structures before energy calculation
+- `--trim FLOAT`: Trim protein around ligand(s) with specified radius in Angstroms
+- `--optimize FLOAT`: Optimize structures with constrained radius around ligand (default: 4.0 Å)
 - `--exp-lig`: Generate explainability analysis and heatmaps
 - `--exp-prot`: Generate protein explainability with protein-ligand interaction analysis and interacting residue coloring depending on their energy contribution
 - `--exp-3d`: Generate 3D PyMOL visualization of protein energy components
 
 ### Trimming Parameters
-- `--radius FLOAT`: Radius in Angstroms for protein trimming (default: 10.0)
 - `--trim-lig FILE`: Specific ligand file to use for trimming
 
 ### Optimization Parameters
+- `--optimize FLOAT`: Enable optimization with specified radius around ligand in Angstroms (default: 4.0 if no value provided)
+- `--optimization-mode {no-strain,strain,strain-prot}`: Strain energy calculation mode (default: no-strain)
+  - **no-strain**: Traditional constrained optimization without strain energy corrections
+  - **strain**: Add ligand strain energy (cost of ligand deformation from optimal free conformation)
+  - **strain-prot**: Add both ligand and protein strain energies for complete binding thermodynamics
 - `--optimizer {FIRE,FIRE2,LBFGS,BFGS,BFGSLineSearch,LBFGSLineSearch,GPMin,MDMin,ODE12r,GoodOldQuasiNewton,QuasiNewton}`: Optimization algorithm (default: FIRE)
 - `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
 - `--steps INT`: Maximum optimization steps (default: 100)
-- `--opt-radius FLOAT`: Optimization radius around ligand
 
 ### Model Parameters
-- `--model-path PATH`: Path to SO3LR model parameters (auto-detected if not specified)
+- `--lr-cutoff FLOAT`: Long-range interaction cutoff distance in Angstroms (default: 1000.0)
+- `--dp`: Enable double precision (float64) for JAX-MD powered calculations
+
+### Charge Parameters
+- `--charge-lig INT`: Charge of the ligand (default: 0)
+- `--charge-prot INT`: Charge of the protein (default: 0)
+- `--charge-cpx INT`: Charge of the complex (default: 0)
 
 ### Logging & Output
 - `-v, --verbose`: Enable detailed logging output (INFO level)
@@ -184,14 +210,14 @@ results_steps_100_fmax0.05/
 
 ```bash
 # Simple protein-ligand interaction calculation
-python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf
+so3lrsf --protein protein.pdb --ligands ligand.sdf
 
 # With structure optimization
-python so3lr_sf.py --protein protein.pdb --ligands ligand.sdf --optimize
+so3lrsf --protein protein.pdb --ligands ligand.sdf --optimize 4.0
 
-# Full workflow with explainability
-python so3lr_sf.py --protein protein.pdb --ligands ligands.sdf \
-    --trim --optimize --exp-lig --verbose
+# With constrained optimization + ligand-strain energy and 2D explainable ligand energies
+so3lrsf --protein protein.pdb --ligands ligands.sdf \
+  --trim 10.0 --optimize 4.0 --optimization-mode strain --exp-lig --verbose
 ```
 
 ### Python API
@@ -226,65 +252,88 @@ print(f"Component contributions: {analysis['component_totals']}")
 
 ### Example 1: Basic Calculation
 ```bash
-python so3lr_sf.py \
+so3lrsf \
     --protein tests/test_data/alanine.xyz \
     --ligands tests/test_data/water.sdf
 ```
 
 ### Example 2: Multi-Ligand Screening + Trim the protein
 ```bash
-python so3lr_sf.py \
+so3lrsf \
     --protein target.pdb \
     --ligands ligand_library.sdf \
-    --trim \
-    --radius 10.0 \
+    --trim 10.0 \
     --trim-lig ref_lig.sdf \
     --verbose
 ```
 
-### Example 3: Optimized Workflow
+### Example 3: Constrained Optimization (Default)
 ```bash
-python so3lr_sf.py \
+so3lrsf \
     --protein protein.pdb \
     --ligands ligands.sdf \
-    --optimize \
+    --optimize 4.0 \
+    --optimization-mode no-strain \
     --optimizer FIRE \
     --fmax 0.05 \
     --steps 100 \
-    --opt-radius 4.0 \
     --verbose
 ```
 
-### Example 4: Full Analysis Pipeline
+### Example 4: Constrained Optimization + ligand-strain energy + protein-strain energy
 ```bash
-python so3lr_sf.py \
+so3lrsf \
+    --protein protein.pdb \
+    --ligands ligands.sdf \
+    --optimize 4.0 \
+    --optimization-mode strain-prot \
+    --optimizer FIRE \
+    --fmax 0.05 \
+    --steps 100 \
+    --verbose
+```
+
+### Example 5: Full Analysis Pipeline
+```bash
+so3lrsf \
     --protein protein.pdb \
     --ligands multi_ligands.sdf \
-    --trim \
-    --radius 8.0 \
-    --optimize \
-    --opt-radius 4.0 \
+    --trim 8.0 \
+    --optimize 4.0 \
+    --optimization-mode strain \
     --exp-lig \
     --opt-log \
     --verbose
 ```
 
-### Example 5: Protein-Ligand Interaction Analysis
+### Example 6: Protein-Ligand Interaction Analysis
 ```bash
-python so3lr_sf.py \
+so3lrsf \
     --protein protein.pdb \
     --ligands ligand.sdf \
     --exp-prot \
     --verbose
 ```
 
-### Example 6: Debug Mode for Troubleshooting
+### Example 7: With Explicit Charge Parameters
 ```bash
-python so3lr_sf.py \
+so3lrsf \
+    --protein protein.pdb \
+    --ligands ligand.sdf \
+    --charge-prot -2 \
+    --charge-lig 1 \
+    --charge-cpx -1 \
+    --optimize 4.0 \
+    --verbose
+```
+
+### Example 8: Debug Mode for Troubleshooting
+```bash
+so3lrsf \
     --protein protein.pdb \
     --ligands ligand.sdf \
     --debug \
-    --optimize
+    --optimize 4.0
 ```
 
 </details>
@@ -292,21 +341,25 @@ python so3lr_sf.py \
 <details>
 <summary><h2>📊 Output Files</h2></summary>
 
-### Results Summary (`results_summary.json`)
+### Results Summary example (`results_summary.json`)
 ```json
 {
   "workflow_parameters": {
-    "protein": "proteins/protein_path.pdb",
-    "ligands_source": "ligands/ligands13.xyz",
-    "trim": false,
+    "protein": "path/to/protein.xyz",
+    "ligands_source": "path/to/ligand.xyz",
+    "trim": null,
     "trim_radius": null,
-    "optimize": false,
+    "optimize": 3.0,
+    "optimization_mode": "strain-prot",
+    "opt_radius": 3.0,
+    "ligand_strain_calculation": true,
+    "protein_strain_calculation": true,
     "ligand explain 2D": false,
     "PL interactions explain 2D": false,
-    "PL interactions explain 3D": true,
-    "optimizer": null,
-    "fmax": null,
-    "steps": null
+    "PL interactions explain 3D": false,
+    "optimizer": "FIRE",
+    "fmax": 0.05,
+    "steps": 100
   },
   "summary": {
     "total_ligands": 1,
@@ -315,18 +368,38 @@ python so3lr_sf.py \
   },
   "results": [
     {
-      "ligand_name": "ligand_001",
-      "interaction_energy": -3.50469970703125,
-      "binding_energy_kcal_mol": -80.81837524414063,
-      "analysis": {
-        "component_totals": {
-          "MLFF": -0.6717734336853027,
-          "ZBL": 0.00029272645645050943,
-          "Electrostatics": -0.13371722865849733,
-          "Dispersion": -0.9648199365474284,
-          "Total": -1.770017891190946
+      "ligand_name": "ligand",
+      "ligand_file": "path/to/ligand.xyz",
+      "interaction_energy": -2.6674346923828125,
+      "base_interaction_energy": -2.7811279296875,
+      "ligand_strain_energy": 0.0687103271484375,
+      "protein_strain_energy": 0.04498291015625,
+      "binding_energy_kcal_mol": -61.51104400634765,
+      "ligand_explainability": {
+        "protein_energy_components": {
+          "electrostatic_energy": -13.823354721069336,
+          "zbl_repulsion": 36.19248580932617,
+          "dispersion_energy": -6.992919445037842,
+          "nn_energy": -679.03564453125
         },
-        "ligand_explainability_heatmap": "ligand_exp/ligand_001_heatmap.png"
+        "ligand_energy_components": {
+          "electrostatic_energy": -1.2963955402374268,
+          "zbl_repulsion": 2.4064440727233887,
+          "dispersion_energy": -0.5644962787628174,
+          "nn_energy": -60.04219436645508
+        },
+        "complex_energy_components": {
+          "electrostatic_energy": -14.730865478515625,
+          "zbl_repulsion": 38.59886932373047,
+          "dispersion_energy": -9.317378997802734,
+          "nn_energy": -740.4879150390625
+        },
+        "interaction_energy_components": {
+          "electrostatic_energy": 0.3888847827911377,
+          "zbl_repulsion": -6.0558319091796875e-05,
+          "dispersion_energy": -1.7599632740020752,
+          "nn_energy": -1.4100761413574219
+        }
       }
     }
   ]

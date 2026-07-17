@@ -34,9 +34,15 @@ from .utils import setup_logging
 
 from .calculator import So3lrSfCalculator
 
-from .structure_ops import (
-    trim_structure,
-    optimize_structure,
+from .optimization import (
+    optimize_structure
+)
+
+from .trim import (
+    trim_structure
+)
+
+from .molecule_loader import (
     extract_ligands
 )
 

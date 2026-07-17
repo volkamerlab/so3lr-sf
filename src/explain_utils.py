@@ -108,7 +108,7 @@ def categorize_interaction(interaction_type: str) -> str:
     elif interaction_lower in ['hydrophobic']:
         return 'Hydrophobic'
     elif interaction_lower in ['vdwcontact', 'vdw', 'vanderwaals']:
-        return 'VdW'
+        return 'vdW'
     elif interaction_lower in ['pistacking', 'pication', 'cationpi', 'edgetoface', 'facetoface', 'basepistacking', 'pi-stacking', 'pi']:
         return 'π-interaction'
     elif interaction_lower in ['anionic', 'cationic', 'saltbridge', 'ionic', 'salt-bridge']:
@@ -183,7 +183,7 @@ def add_interaction_summary(fig: plt.Figure, atom_mappings: List[Dict[str, Any]]
         'H-bond': (0.1, 0.3, 0.7),
         'Halogen bond': (0.1, 0.2, 0.5),
         'Hydrophobic': (0.1, 0.6, 0.1),
-        'VdW': (0.5, 0.9, 0.5),
+        'vdW': (0.5, 0.9, 0.5),
         'π-interaction': (0.9, 0.9, 0.2),
         'Ionic': (0.3, 0.8, 0.8),
         'Metal': (0.8, 0.2, 0.8),
@@ -406,11 +406,11 @@ def atom_weights_calculation(
 
         # Add protein atom weights (indices 0 to n_protein_atoms-1)
         for i, weight in enumerate(protein_values):
-            component_weights[i] = float(weight)
+            component_weights[i+1] = float(weight)
 
         # Add ligand atom weights (indices n_protein_atoms to n_protein_atoms+n_ligand_atoms-1)
         for i, weight in enumerate(ligand_values):
-            atom_index = n_protein_atoms + i
+            atom_index = n_protein_atoms + i + 1
             component_weights[atom_index] = float(weight)
 
         atom_weights[component] = component_weights
@@ -433,7 +433,7 @@ def compute_energy_differences(
 
     Calculates interaction energy differences by comparing atoms in the complex
     vs. their isolated states: complex_part - isolated for each energy component.
-    Maps internal component names to user-friendly names (e.g., 'mlff_atomic_energy' -> 'MLFF').
+    Maps internal component names to user-friendly names (e.g., 'nn_energy' -> 'MLFF').
 
     Args:
         protein_components: Per-atom energy components for isolated protein
@@ -451,7 +451,7 @@ def compute_energy_differences(
     """
     # Component mapping to standard names
     component_mapping = {
-        'mlff_atomic_energy': 'MLFF',
+        'nn_energy': 'MLFF',
         'zbl_repulsion': 'ZBL',
         'electrostatic_energy': 'Electrostatics',
         'dispersion_energy': 'Dispersion'

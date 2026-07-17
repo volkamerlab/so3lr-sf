@@ -24,7 +24,8 @@ from tqdm import tqdm
 
 from src.calculator import So3lrSfCalculator
 from src.utils import setup_logging
-from src.structure_ops import perform_trimming, optimize_protein, process_single_ligand
+from src.optimization import process_single_ligand
+from src.trim import perform_trimming
 from src.utils import setup_output_directory, save_results, get_ligand_files
 from src.molecule_loader import load_molecule_to_prolif
 
@@ -39,19 +40,19 @@ Examples:
   python so3lr_sf.py protein.pdb ligand.sdf
 
   # Trim protein around ligand (5Å radius)
-  python so3lr_sf.py protein.pdb ligand.sdf --trim --radius 5.0
+  python so3lr_sf.py protein.pdb ligand.sdf --trim 5.0
 
   # Optimize structures before calculation
   python so3lr_sf.py protein.pdb ligand.sdf --optimize
 
   # Full workflow with explainability
-  python so3lr_sf.py protein.pdb ligands.sdf --trim --optimize --exp-lig
+  python so3lr_sf.py protein.pdb ligands.sdf --trim 10.0 --optimize --exp-lig
 
   # 3D protein energy visualization
   python so3lr_sf.py protein.pdb ligands.sdf --exp-prot --exp-3d
 
-  # Process ligand directory
-  python so3lr_sf.py protein.pdb ligands.sdf --optimize --exp-lig
+  # Process ligand directory with double precision
+  python so3lr_sf.py protein.pdb ligands.sdf --optimize --exp-lig --dp
         """
     )
 
@@ -69,14 +70,9 @@ Examples:
 
     # Main workflow options
     parser.add_argument(
-        "--trim",
-        action="store_true",
-        help="Trim protein around ligand(s) before calculation"
-    )
-    parser.add_argument(
         "--optimize",
-        action="store_true",
-        help="Optimize structures before energy calculation"
+        type=float,
+        help="Optimize structures with specified radius in Angstroms before energy calculation"
     )
     parser.add_argument(
         "--exp-lig",
@@ -101,10 +97,9 @@ Examples:
 
     # Trimming parameters
     parser.add_argument(
-        "--radius",
+        "--trim",
         type=float,
-        default=10.0,
-        help="Radius in Angstroms for protein trimming (default: 10.0)"
+        help="Trim protein around ligand(s) with specified radius in Angstroms"
     )
     parser.add_argument(
         "--trim-lig",
@@ -115,7 +110,8 @@ Examples:
     # Optimization parameters
     parser.add_argument(
         "--optimizer",
-        choices=["FIRE", "LBFGS"],
+        choices=["FIRE", "FIRE2", "LBFGS", "BFGS", "BFGSLineSearch", "LBFGSLineSearch",
+                 "GPMin", "MDMin", "ODE12r", "GoodOldQuasiNewton", "QuasiNewton"],
         default="FIRE",
         help="Optimization algorithm (default: FIRE)"
     )
@@ -132,16 +128,43 @@ Examples:
         help="Maximum optimization steps (default: 100)"
     )
     parser.add_argument(
-        "--opt-radius",
-        type=float,
-        help="Optimization radius in Angstroms - only atoms within this distance of ligand will be optimized"
+        "--optimization-mode",
+        choices=["no-strain", "strain", "strain-prot"],
+        default="no-strain",
+        help="Optimization strategy: 'no-strain' (energy from optimized complex only), 'strain' (add ligand strain energy), 'strain-prot' (add both ligand and protein strain energies). Default: no-strain"
     )
-    
+
     # Model parameters
     parser.add_argument(
-        "--model-path",
-        type=str,
-        help="Path to SO3LR model parameters (auto-detected if not specified)"
+        "--dp",
+        action="store_true",
+        help="Enable double precision (float64) for JAX-MD powered calculations"
+    )
+    parser.add_argument(
+        "--lr-cutoff",
+        type=float,
+        default=1000.0,
+        help="Long-range interaction cutoff distance in Angstroms (default: 1000.0)"
+    )
+
+    # Charge parameters
+    parser.add_argument(
+        "--charge-lig",
+        type=int,
+        default=0,
+        help="Charge of the ligand (default: 0)"
+    )
+    parser.add_argument(
+        "--charge-prot",
+        type=int,
+        default=0,
+        help="Charge of the protein (default: 0)"
+    )
+    parser.add_argument(
+        "--charge-cpx",
+        type=int,
+        default=0,
+        help="Charge of the complex (default: 0)"
     )
 
     # Logging
@@ -200,14 +223,22 @@ def main():
         logger.debug(f"Command line arguments: {vars(args)}")
         logger.info(f"Protein: {args.protein}")
         logger.info(f"Ligands: {args.ligands}")
+
+        # Warn if charges are not explicitly provided
+        if args.charge_lig == 0 and args.charge_prot == 0 and args.charge_cpx == 0:
+            logger.warning("WARNING: Charge parameters not explicitly provided. Using default values (charge-lig=0, charge-prot=0, charge-cpx=0). "
+                          "For accurate calculations, consider specifying actual charges using --charge-lig, --charge-prot, and --charge-cpx arguments.")
+        else:
+            logger.info(f"Charges: protein={args.charge_prot}, ligand={args.charge_lig}, complex={args.charge_cpx}")
+
         # Check for 3D explain argument (handle hyphen conversion)
         logger.info(f"Workflow: trim={args.trim}, optimize={args.optimize}, eda={args.eda}, exp-lig={args.exp_lig}, exp-prot={args.exp_prot}, exp-3d={args.exp_3d}")
 
         # Setup output directory and subdirectories
         output_dir = setup_output_directory(
-            protein_path, optimize=args.optimize, trim=args.trim,
+            protein_path, optimize=args.optimize, trim_radius=args.trim,
             exp_lig=args.exp_lig, exp_prot=args.exp_prot, exp_3d=args.exp_3d,
-            steps=args.steps, fmax=args.fmax, radius=args.radius
+            steps=args.steps, fmax=args.fmax
         )
         logger.info(f"Output directory: {output_dir}")
         logger.debug(f"Created output subdirectories for workflow modes")
@@ -216,28 +247,32 @@ def main():
         calc_kwargs = {}
         if args.exp_lig or args.eda or args.exp_prot or args.exp_3d:
             calc_kwargs['output_per_atom_energy_components'] = True
+        if args.dp:
+            calc_kwargs['dp'] = True
+        calc_kwargs['lr_cutoff'] = args.lr_cutoff
 
         logger.debug(f"Calculator kwargs: {calc_kwargs}")
         logger.info("Initializing SO3LRSF calculator...")
-        calc = So3lrSfCalculator(model_path=args.model_path, **calc_kwargs)
+        calc = So3lrSfCalculator(**calc_kwargs)
 
         # Initialize optimization log
         optimization_log = [] if args.opt_log else None
 
         # Step 1: Trimming phase
         working_protein_path = str(protein_path)
-        if args.trim:
+        if args.trim is not None:
             working_protein_path = perform_trimming(
-                protein_path, args.ligands, args.radius, args.trim_lig, output_dir, logger
+                protein_path, args.ligands, args.trim, args.trim_lig, output_dir, logger
             )
 
-        # Step 2: Protein optimization
-        if args.optimize:
-            logger.info("=== OPTIMIZATION PHASE ===")
-            working_protein_path = optimize_protein(
-                working_protein_path, calc, args.optimizer, args.fmax, args.steps,
-                output_dir, optimization_log, args.opt_log, logger
-            )
+        # Store optimization parameters in args for process_single_ligand
+        if args.optimize is not None:
+            args.opt_radius = args.optimize  # Use optimize value as radius
+            args.calculate_protein_strain = args.optimization_mode == "strain-prot"
+            logger.info(f"=== OPTIMIZATION MODE: {args.optimization_mode} (radius: {args.opt_radius}Å) ===")
+        else:
+            args.opt_radius = None
+            args.calculate_protein_strain = False
 
         # Optional: load ProLIF protein structure for explainability
         preloaded_protein_prolif = None
@@ -258,7 +293,8 @@ def main():
             result, error = process_single_ligand(
                 ligand_file, args, calc, working_protein_path,
                 output_dir, optimization_log, logger,
-                preloaded_protein_prolif
+                preloaded_protein_prolif,
+                charges=(args.charge_prot, args.charge_lig, args.charge_cpx)
             )
 
             if error:

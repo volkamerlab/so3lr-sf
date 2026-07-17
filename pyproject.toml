@@ -1,41 +1,101 @@
-[tool.poetry]
+[project]
 name = "so3lr-sf"
 version = "0.0.1"
-description = "SO3krates Universal Pairwise Force Field with Long Range Interactions (SO3LR) for Molecular Simulation"
-authors = ["Adil Kabdyla, Thorben Frank"]
+description = "SO3krates Universal Pairwise Force Field with Long Range Interactions (SO3LR) as a scoring function for binding affinity calculations"
+authors = [{ name = "Hamza Ibrahim" }]
 license = "MIT"
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
 
+dependencies = [
+    "numpy",
+    "ase",
+    "h5py",
+    "rdkit>=2025.3.6,<2026",
+    "prolif>=2.0.0,<3",
+    "tensorflow>=2.20.0,<3",
+    "keras>=3.11.3,<4",
+    "scipy>=1.16.2,<2",
+    "pandas>=2.3.2,<3",
+    "matplotlib>=3.10.6,<4",
+    "protobuf>=6.32.1,<7",
+    "typing-extensions>=4.15.0,<5",
+    "jax==0.5.3",
+    "jaxlib==0.5.3",
+    "jaxtyping>=0.3.2,<0.4",
+    "orbax-checkpoint==0.11.13",
+    # Git-sourced packages; URLs resolved in [tool.uv.sources] below.
+    "so3lr",
+    "mlff"
+]
 
-[tool.poetry.dependencies]
-python = ">=3.12,<4.0"
-numpy = "*"
-ase = "*"
-h5py = "*"
-rdkit = "^2025.03.6"
-prolif = "^2.0.0"
-tensorflow = "^2.20.0"
-keras = "^3.11.3"
-scipy = "^1.16.2"
-pandas = "^2.3.2"
-matplotlib = "^3.10.6"
-protobuf = "^6.32.1"
-typing-extensions = "^4.15.0"
-jax = "0.5.3"
-jaxtyping = "^0.3.2"
-mlff = { git = "https://github.com/hamzaibrahim21/mlff.git", branch = "v1.0-eda", optional = false }
-jraph = { git = "https://github.com/kabylda/jraph.git", branch = "master", optional = false }
-jax-md = { git = "https://github.com/kabylda/jax-md.git", branch = "main" , optional = false }
-glp = { git = "https://github.com/kabylda/glp.git", branch = "electrostatics_neighbourlist", optional = false }
+[project.scripts]
+so3lrsf = "so3lr_sf:main"
 
-[tool.poetry.group.test.dependencies]
-pytest = "^8.0.0"
-pytest-cov = "^6.0.0"
-coverage = "^7.6.0"
-coverage-badge = "^1.1.0"
-pytest-xdist = "^3.6.0"
-pytest-mock = "^3.14.0"
+[tool.uv]
 
+default-groups = ["test"]
+
+override-dependencies = [
+    "mlff @ git+https://github.com/hamzaibrahim21/mlff.git@v1.0-eda-import"
+]
+[tool.uv.sources]
+so3lr = { git = "https://github.com/general-molecular-simulations/so3lr.git", branch = "main" }
+mlff = { git = "https://github.com/hamzaibrahim21/mlff.git", branch = "v1.0-eda-import" }
+
+[dependency-groups]
+test = [
+    "pytest>=8.0.0,<9",
+    "pytest-cov>=6.0.0,<7",
+    "coverage>=7.6.0,<8",
+    "coverage-badge>=1.1.0,<2",
+    "pytest-xdist>=3.6.0,<4",
+    "pytest-mock>=3.14.0,<4",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["so3lr_sf.py", "src"]
+
+# ---------------------------------------------------------------------------
+# Coverage configuration (all outputs centralized under coverage/)
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src"]
+data_file = "coverage/.coverage"
+omit = [
+    "src/__pycache__/*",
+    "*/tests/*",
+    "*/test_*",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 40
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "coverage/htmlcov"
+title = "SO3LR-SF Test Coverage Report"
+
+[tool.coverage.xml]
+output = "coverage/coverage.xml"
+
+[tool.coverage.json]
+output = "coverage/coverage.json"

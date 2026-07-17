@@ -19,7 +19,8 @@ from .explainability import generate_energy_heatmap
 from .explain_utils import compute_energy_differences
 
 def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, Path],
-                      complex_path: Optional[Union[str, Path]] = None, logger=None) -> Tuple[Atoms, Atoms, Atoms]:
+                      complex_path: Optional[Union[str, Path]] = None, logger=None,
+                      charges: Tuple[int, int, int] = (0, 0, 0)) -> Tuple[Atoms, Atoms, Atoms]:
     """
     Load and prepare protein, ligand, and complex structures.
 
@@ -62,7 +63,9 @@ def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, P
         positions = np.concatenate((protein_atoms.get_positions(), ligand_atoms.get_positions()), axis=0)
         complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
         logger.debug(f"Complex created: {len(complex_atoms)} total atoms")
-
+    protein_atoms.info['charge'] = charges[0]
+    ligand_atoms.info['charge'] = charges[1]
+    complex_atoms.info['charge'] = charges[2]
     return protein_atoms, ligand_atoms, complex_atoms
 
 
@@ -89,6 +92,10 @@ def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, cal
     # TODO: Move ligand far away to minimize interactions in a clever way to ensure it is further than cutoff
     positions = np.concatenate((protein_atoms.get_positions(), ligand_atoms.get_positions()+1000), axis=0) # Move ligand far away
     complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
+    # This combined (but separated) system is evaluated in a single call, so its
+    # total charge must be the sum of the protein and ligand charges — otherwise
+    # the non-interacting reference would silently be computed as neutral.
+    complex_atoms.info['charge'] = protein_atoms.info.get('charge', 0) + ligand_atoms.info.get('charge', 0)
     non_interaction_energy = calc.calculate_energy(complex_atoms)
     protein_atoms = len(protein_atoms.get_atomic_numbers())
 
@@ -156,6 +163,68 @@ def compute_interaction_energy(complex_energy: float, non_iter_energy: float,
 
     return interaction_energy
 
+
+def calculate_strain_energies(optimized_ligand_path: str, optimized_protein_path: str,
+                             free_ligand_path: Optional[str], free_protein_path: Optional[str],
+                             calc: So3lrSfCalculator, calculate_protein_strain: bool = False,
+                             logger=None) -> Dict[str, float]:
+    """
+    Calculate strain energies for ligand and optionally protein.
+
+    Strain energy = Energy_in_complex - Energy_free_optimized
+
+    Args:
+        optimized_ligand_path: Path to ligand extracted from optimized complex
+        optimized_protein_path: Path to protein extracted from optimized complex
+        free_ligand_path: Path to free optimized ligand (required for strain calc)
+        free_protein_path: Path to free optimized protein (optional, for protein strain)
+        calc: Calculator instance
+        calculate_protein_strain: Whether to calculate protein strain energy
+        logger: Logger instance
+
+    Returns:
+        Dictionary containing strain energies
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    strain_energies = {}
+
+    # Calculate ligand strain energy
+    if free_ligand_path is not None:
+        logger.info("Calculating ligand strain energy...")
+
+        # Energy of ligand in optimized complex
+        ligand_in_complex = load_ase_structure(optimized_ligand_path)[0]
+        ligand_complex_energy = calc.calculate_energy(ligand_in_complex)
+
+        # Energy of free optimized ligand
+        free_ligand = load_ase_structure(free_ligand_path)[0]
+        free_ligand_energy = calc.calculate_energy(free_ligand)
+
+        ligand_strain = ligand_complex_energy - free_ligand_energy
+        strain_energies['ligand_strain'] = ligand_strain
+
+        logger.info(f"Ligand strain energy: {ligand_strain:.6f} eV ({ligand_strain * 23.06:.2f} kcal/mol)")
+
+    # Calculate protein strain energy (if requested)
+    if calculate_protein_strain and free_protein_path is not None:
+        logger.info("Calculating protein strain energy...")
+
+        # Energy of protein in optimized complex
+        protein_in_complex = load_ase_structure(optimized_protein_path)[0]
+        protein_complex_energy = calc.calculate_energy(protein_in_complex)
+
+        # Energy of free optimized protein
+        free_protein = load_ase_structure(free_protein_path)[0]
+        free_protein_energy = calc.calculate_energy(free_protein)
+
+        protein_strain = protein_complex_energy - free_protein_energy
+        strain_energies['protein_strain'] = protein_strain
+
+        logger.info(f"Protein strain energy: {protein_strain:.6f} eV ({protein_strain * 23.06:.2f} kcal/mol)")
+
+    return strain_energies
 
 def compute_eda_analysis(protein_components: Dict, ligand_components: Dict, complex_components: Dict,
                         logger=None) -> Dict[str, Any]:
@@ -315,6 +384,7 @@ def protein_ligand_interaction(
     verbose: bool = False,
     preloaded_protein_prolif: Optional[Tuple[plf.Molecule, Dict[str, List[int]]]] = None,
     exp_outputs: Optional[Tuple[Optional[Union[str, Path]], Optional[Union[str, Path]], Optional[Union[str, Path]]]] = None,
+    charges: Tuple[Optional[int], Optional[int], Optional[int]] = (0, 0, 0),
 ) -> Union[float, Tuple[float, Dict[str, Any]]]:
     """
     Calculate protein-ligand interaction energy with optional explainability.
@@ -360,7 +430,6 @@ def protein_ligand_interaction(
 
     logger.info(f"Protein: {protein_path}")
     logger.info(f"Ligand: {ligand_path}")
-    logger.debug(f"Using calculator with model: {calc.model_path}")
 
     exp_mode = any(exp_outputs) if exp_outputs else False
 
@@ -370,7 +439,7 @@ def protein_ligand_interaction(
 
     # Step 1: Prepare structures
     protein_atoms, ligand_atoms, complex_atoms = prepare_structures(
-        protein_path, ligand_path, complex_path, logger
+        protein_path, ligand_path, complex_path, logger, charges=charges
     )
 
     # Step 2: Calculate individual energies

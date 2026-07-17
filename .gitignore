@@ -3,28 +3,32 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
+fep-benchmark-runtime/
+runtime*
 # Project specific
 so3lr/
 example_so3lr_per_atom_energies.py
 *.ini
+# keep pytest.ini tracked; the *.ini rule above would otherwise ignore it
+!pytest.ini
 */_*
 src/__pycache_*
 _*
-tests/test_data/*/
+tests/test_data/*
+# ignore docker build cache/artifacts but keep Docker/Dockerfile tracked
+Docker/.docker*
+protein_ligand_analyzer/*
 
-# Coverage reports
-coverage.xml
-htmlcov/
-.coverage
+debug*
+trial*
+calculate*
+depracated*
+so3lr-sf_py/*
+
+# Tooling
+.qodo/
+
+# Coverage reports (all outputs centralized under coverage/)
+coverage/
 *.cover
 .pytest_cache/
-protein_ligand_analyzer/*
-example*
-debug*
-
-tests/test_data/*
-Docker/.docker*
-calculate*
-
-trial*

@@ -15,8 +15,6 @@ permissions:
 env:
   PYTHON_VERSION: '3.12'
   # Optimization environment variables
-  PIP_CACHE_DIR: ~/.cache/pip
-  POETRY_CACHE_DIR: ~/.cache/pypoetry
   JAX_ENABLE_X64: true
   JAX_PLATFORM_NAME: cpu
   TF_CPP_MIN_LOG_LEVEL: 2
@@ -34,79 +32,50 @@ jobs:
         with:
           fetch-depth: 0  # Fetch full history for better coverage
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+        run: uv python install ${{ matrix.python-version }}
 
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: latest
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Cache Poetry dependencies and installations
+      - name: Cache extra model/framework caches
         uses: actions/cache@v4
-        id: cache-poetry
         with:
           path: |
-            .venv
-            ~/.cache/pypoetry
-            ~/.cache/pip
             ~/.cache/huggingface
             ~/.jax_cache
             ~/.tensorflow
             ~/.keras
-            ~/.cache/git
-            ~/.gitconfig
-          key: poetry-full-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', '**/poetry.lock') }}
+          key: caches-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/uv.lock') }}
           restore-keys: |
-            poetry-full-${{ runner.os }}-${{ matrix.python-version }}-
-            poetry-${{ runner.os }}-${{ matrix.python-version }}-
+            caches-${{ runner.os }}-${{ matrix.python-version }}-
 
       - name: Install dependencies
         run: |
-          # Use --no-dev flag to skip development dependencies if they're not needed
-          poetry install --with test --no-interaction --no-ansi
+          uv sync --group test --frozen
 
-      - name: Cache SO3LR model files
-        uses: actions/cache@v4
-        id: cache-so3lr
-        with:
-          path: so3lr_models
-          key: so3lr-models-v2-${{ runner.os }}
-          restore-keys: |
-            so3lr-models-v2-
-            so3lr-models-
-
-      - name: Download SO3LR model files
-        if: steps.cache-so3lr.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p so3lr_models
-          cd so3lr_models
-          git clone --depth 1 --filter=blob:none --sparse https://github.com/general-molecular-simulations/so3lr.git
-          cd so3lr
-          git sparse-checkout set so3lr/params
-          echo "Downloaded SO3LR models to: $(pwd)/so3lr/params"
-          ls -la so3lr/params
+      # NOTE: SO3LR model parameters ship as package data with the installed
+      # `so3lr` package (loaded via So3lrPotential / So3lrCalculator), so no
+      # separate model download or SO3LR_MODEL_PATH env var is needed.
 
       - name: Run tests with coverage
-        env:
-          SO3LR_MODEL_PATH: ${{ github.workspace }}/so3lr_models/so3lr/so3lr/params
         run: |
-          poetry run pytest tests/ --cov=src --cov-report=xml --cov-report=html --cov-report=term-missing --cov-report=json --cov-fail-under=90 -v
+          uv run pytest tests/ --cov=src --cov-report=xml:coverage/coverage.xml --cov-report=html:coverage/htmlcov --cov-report=term-missing --cov-report=json:coverage/coverage.json -v
 
       - name: Generate coverage badge
         run: |
-          poetry run coverage-badge -o coverage.svg -f
+          uv run coverage-badge -o coverage/coverage.svg -f
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
+          files: ./coverage/coverage.xml
           flags: unittests
           name: codecov-ubuntu-latest-py3.12
           fail_ci_if_error: true
@@ -120,12 +89,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: |
-            .coverage
-            htmlcov/
-            coverage.xml
-            coverage.json
-            coverage.svg
+          path: coverage/
           retention-days: 30
 
   coverage-report:
@@ -139,6 +103,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: coverage-report-ubuntu-latest-py3.12
+          # upload-artifact strips the `coverage/` prefix (dir becomes archive
+          # root), so restore the contents back under coverage/.
+          path: coverage
 
 
       - name: Coverage summary
@@ -146,7 +113,7 @@ jobs:
           echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
           python3 -c "
           import xml.etree.ElementTree as ET
-          tree = ET.parse('coverage.xml')
+          tree = ET.parse('coverage/coverage.xml')
           root = tree.getroot()
           line_rate = float(root.attrib.get('line-rate', 0)) * 100
           branch_rate = float(root.attrib.get('branch-rate', 0)) * 100

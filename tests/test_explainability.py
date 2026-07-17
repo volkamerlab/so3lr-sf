@@ -329,7 +329,7 @@ class TestExplainabilityModule:
             fig = generate_energy_heatmap(
                 ligand_path=ligand_path,
                 ligand_energy_differences=sample_ligand_energy_differences,
-                output_paths=(None, None, None),
+                output_paths=(None, "/tmp/test_output.png", None),  # Provide output path for protein heatmap
                 protein_energy_differences=sample_protein_energy_differences,
                 preloaded_protein_prolif=mock_preloaded_protein
             )

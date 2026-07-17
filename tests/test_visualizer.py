@@ -17,7 +17,6 @@ from io import StringIO
 
 from src.visualizer import (
     add_interaction_detection,
-    add_component_title,
     apply_energy_coloring,
     create_pymol_session
 )
@@ -105,79 +104,6 @@ class TestAddInteractionDetection:
         # Count occurrences to ensure all instances use structure name
         assert commands.count(structure_name) >= 15  # Should appear in multiple commands
 
-
-class TestAddComponentTitle:
-    """Test the add_component_title function that creates floating labels."""
-
-    def test_add_component_title_positioning(self):
-        """Test that component titles are positioned correctly above structures."""
-        output = StringIO()
-        structure_name = "protein_mlff"
-        component = "MLFF"
-        center_of_mass = np.array([10.0, 20.0, 30.0])
-        x_offset = 50.0
-
-        add_component_title(output, structure_name, component, center_of_mass, x_offset)
-
-        commands = output.getvalue()
-
-        # Check title positioning calculation
-        expected_x = center_of_mass[0] + x_offset  # 60.0
-        expected_y = center_of_mass[1]             # 20.0
-        expected_z = center_of_mass[2] + 50        # 80.0
-
-        assert f"pos=[{expected_x:.3f}, {expected_y:.3f}, {expected_z:.3f}]" in commands
-        assert f"pseudoatom title_{structure_name}" in commands
-
-    def test_add_component_title_styling(self):
-        """Test that component title styling is applied correctly."""
-        output = StringIO()
-        structure_name = "protein_electrostatics"
-        component = "Electrostatics"
-        center_of_mass = np.array([0.0, 0.0, 0.0])
-        x_offset = 0.0
-
-        add_component_title(output, structure_name, component, center_of_mass, x_offset)
-
-        commands = output.getvalue()
-
-        # Check header comment
-        assert f"# Add floating title for {component} energy component at structure center" in commands
-
-        # Check label content and styling
-        assert f"label title_{structure_name}, '{component}'" in commands
-        assert f"set label_size, 25, title_{structure_name}" in commands
-        assert f"set label_color, black, title_{structure_name}" in commands
-
-        # Check pseudoatom styling
-        assert f"show spheres, title_{structure_name}" in commands
-        assert f"set sphere_scale, 0.2, title_{structure_name}" in commands
-        assert f"color blue, title_{structure_name}" in commands
-
-    def test_add_component_title_multiple_components(self):
-        """Test that titles work correctly for multiple components side by side."""
-        components = [("MLFF", 0.0), ("Electrostatics", 70.0), ("Total", 140.0)]
-        center_of_mass = np.array([25.0, 15.0, 10.0])
-
-        outputs = []
-        for component, x_offset in components:
-            output = StringIO()
-            structure_name = f"protein_{component.lower()}"
-            add_component_title(output, structure_name, component, center_of_mass, x_offset)
-            outputs.append(output.getvalue())
-
-        # Verify each component has unique positioning
-        expected_positions = [
-            "[25.000, 15.000, 60.000]",  # MLFF: 25+0, 15, 10+50
-            "[95.000, 15.000, 60.000]",  # Electrostatics: 25+70, 15, 10+50
-            "[165.000, 15.000, 60.000]"  # Total: 25+140, 15, 10+50
-        ]
-
-        for i, (output, expected_pos) in enumerate(zip(outputs, expected_positions)):
-            assert expected_pos in output
-            assert f"'{components[i][0]}'" in output
-
-
 class TestApplyEnergyColoring:
     """Test the apply_energy_coloring function that creates energy-based gradients."""
 
@@ -205,9 +131,9 @@ class TestApplyEnergyColoring:
         assert set(contributing_atoms) == {1, 2, 3}
 
         # Check color definitions for significant atoms
-        assert "red_MLFF_0" in commands  # atom 1 (positive)
-        assert "blue_MLFF_1" in commands  # atom 2 (negative)
-        assert "red_MLFF_2" in commands  # atom 3 (positive)
+        assert "purple_MLFF_0" in commands  # atom 1 (positive)
+        assert "green_MLFF_1" in commands  # atom 2 (negative)
+        assert "purple_MLFF_2" in commands  # atom 3 (positive)
 
         # Check that atoms 4 and 5 are not colored
         assert "id 4" not in commands
@@ -234,17 +160,17 @@ class TestApplyEnergyColoring:
 
         commands = output.getvalue()
 
-        # For maximum positive (intensity = 1.0): r = 0.7 + 0.3*1 = 1.0, g = b = 0.7*0 = 0.0
-        assert "set_color red_TEST_0, [1.000, 0.000, 0.000]" in commands
+        # For maximum positive (intensity = 1.0): r = 0.7 + 0.3*1 = 1.0, g = 0.7*0 = 0.0, b = 0.7 + 0.3*1 = 1.0 (purple)
+        assert "set_color purple_TEST_0, [1.000, 0.000, 1.000]" in commands
 
-        # For maximum negative (intensity = 1.0): r = g = 0.7*0 = 0.0, b = 0.7 + 0.3*1 = 1.0
-        assert "set_color blue_TEST_1, [0.000, 0.000, 1.000]" in commands
+        # For maximum negative (intensity = 1.0): r = 0.7*0 = 0.0, g = 0.7 + 0.3*1 = 1.0, b = 0.7*0 = 0.0 (green)
+        assert "set_color green_TEST_1, [0.000, 1.000, 0.000]" in commands
 
-        # For 50% positive (intensity = 0.5): r = 0.7 + 0.3*0.5 = 0.85, g = b = 0.7*0.5 = 0.35
-        assert "set_color red_TEST_2, [0.850, 0.350, 0.350]" in commands
+        # For 50% positive (intensity = 0.5): r = 0.7 + 0.3*0.5 = 0.85, g = 0.7*0.5 = 0.35, b = 0.7 + 0.3*0.5 = 0.85 (purple)
+        assert "set_color purple_TEST_2, [0.850, 0.350, 0.850]" in commands
 
-        # For 50% negative (intensity = 0.5): r = g = 0.7*0.5 = 0.35, b = 0.7 + 0.3*0.5 = 0.85
-        assert "set_color blue_TEST_3, [0.350, 0.350, 0.850]" in commands
+        # For 50% negative (intensity = 0.5): r = 0.7*0.5 = 0.35, g = 0.7 + 0.3*0.5 = 0.85, b = 0.7*0.5 = 0.35 (green)
+        assert "set_color green_TEST_3, [0.350, 0.850, 0.350]" in commands
 
     def test_apply_energy_coloring_invalid_values(self, caplog):
         """Test handling of invalid energy values."""
@@ -292,7 +218,6 @@ class TestCreatePymolSession:
                 "/nonexistent/file.pdb",
                 {"MLFF": {"1": 0.5}},
                 "/tmp/output.pml",
-                np.array([0, 0, 0])
             )
 
     def test_create_pymol_session_basic_structure(self):
@@ -307,9 +232,8 @@ class TestCreatePymolSession:
                 "MLFF": {"1": 0.5, "2": -0.3},
                 "Electrostatics": {"1": -0.2, "2": 0.8}
             }
-            center_of_mass = np.array([0, 0, 0])
 
-            result = create_pymol_session(pdb_file, atom_weights, output_file, center_of_mass)
+            result = create_pymol_session(pdb_file, atom_weights, output_file)
 
             assert result == str(output_file)
             assert output_file.exists()
@@ -329,9 +253,8 @@ class TestCreatePymolSession:
             assert "load test.pdb, protein_mlff" in content
             assert "load test.pdb, protein_electrostatics" in content
 
-            # Check structure positioning (side by side)
-            assert "translate [0, 0, 0], protein_mlff" in content
-            assert "translate [70, 0, 0], protein_electrostatics" in content
+            # Check structure positioning (overlapping - no translations)
+            assert "translate [" not in content
 
     def test_create_pymol_session_protein_ligand_styling(self):
         """Test that protein and ligand styling commands are generated."""
@@ -341,9 +264,8 @@ class TestCreatePymolSession:
 
             output_file = Path(temp_dir) / "output.pml"
             atom_weights = {"Total": {"1": 0.7}}
-            center_of_mass = np.array([10, 20, 30])
 
-            create_pymol_session(pdb_file, atom_weights, output_file, center_of_mass)
+            create_pymol_session(pdb_file, atom_weights, output_file)
 
             content = output_file.read_text()
 
@@ -371,9 +293,8 @@ class TestCreatePymolSession:
                 "ZBL": {"1": 0.3, "2": 0.8},
                 "Dispersion": {"1": -0.2, "2": -0.1}
             }
-            center_of_mass = np.array([5, 10, 15])
 
-            create_pymol_session(pdb_file, atom_weights, output_file, center_of_mass)
+            create_pymol_session(pdb_file, atom_weights, output_file)
 
             content = output_file.read_text()
 
@@ -382,13 +303,16 @@ class TestCreatePymolSession:
             assert "protein_zbl" in content
             assert "protein_dispersion" in content
 
-            # Check component titles are added
-            assert "pseudoatom title_protein_mlff" in content
-            assert "pseudoatom title_protein_zbl" in content
-            assert "pseudoatom title_protein_dispersion" in content
+            # Check that structures are positioned at same location (no translation)
+            assert "translate [" not in content
 
-            # Check interaction detection is called for each
-            assert content.count("# Detect and visualize interactions") >= 3
+            # Check interaction detection is called only once (not for each component)
+            assert content.count("# Detect and visualize interactions") == 1
+
+            # Check that near_ligand selections are cleaned up
+            assert "delete near_ligand_protein_mlff" in content
+            assert "delete near_ligand_protein_zbl" in content
+            assert "delete near_ligand_protein_dispersion" in content
 
     def test_create_pymol_session_final_setup(self):
         """Test that final visualization setup commands are included."""
@@ -398,9 +322,8 @@ class TestCreatePymolSession:
 
             output_file = Path(temp_dir) / "output.pml"
             atom_weights = {"Test": {"1": 0.5}}
-            center_of_mass = np.array([0, 0, 0])
 
-            create_pymol_session(pdb_file, atom_weights, output_file, center_of_mass)
+            create_pymol_session(pdb_file, atom_weights, output_file)
 
             content = output_file.read_text()
 
@@ -410,11 +333,6 @@ class TestCreatePymolSession:
             assert "set ray_opaque_background, off" in content
             assert "set ray_trace_mode, 1" in content
             assert "orient" in content
-
-            # Check color scale information
-            assert "# Color scale information:" in content
-            assert "# Blue = Low energy values" in content
-            assert "# Red = High energy values" in content
 
             # Check session saving
             assert "# Save session" in content
@@ -429,9 +347,8 @@ class TestCreatePymolSession:
             output_file = Path(temp_dir) / "output.pml"
             # High energy values to ensure they exceed threshold
             atom_weights = {"MLFF": {"10": 2.0, "20": -1.5, "30": 1.0}}
-            center_of_mass = np.array([0, 0, 0])
 
-            create_pymol_session(pdb_file, atom_weights, output_file, center_of_mass)
+            create_pymol_session(pdb_file, atom_weights, output_file)
 
             content = output_file.read_text()
 
@@ -449,9 +366,8 @@ class TestCreatePymolSession:
 
             output_file = Path(temp_dir) / "output.pml"
             atom_weights = {"MLFF": {"1": 0.5}, "Electrostatics": {"1": -0.3}}
-            center_of_mass = np.array([0, 0, 0])
 
-            create_pymol_session(pdb_file, atom_weights, output_file, center_of_mass)
+            create_pymol_session(pdb_file, atom_weights, output_file)
 
             # Check that info messages were logged
             mock_logger.info.assert_any_call("Creating PyMOL visualization with 2 energy components")
@@ -486,10 +402,9 @@ HETATM    5  O1  LIG B   1      14.567  19.234   8.456  1.00 20.00           O
                 "Total": {"1": 0.6, "2": 0.0, "3": 0.05, "4": 0.25, "5": 0.12}
             }
 
-            center_of_mass = np.array([17.5, 17.8, 10.4])
 
             # Run complete workflow
-            result_path = create_pymol_session(pdb_file, atom_weights, output_file, center_of_mass)
+            result_path = create_pymol_session(pdb_file, atom_weights, output_file)
 
             assert result_path == str(output_file)
             assert output_file.exists()
@@ -504,9 +419,8 @@ HETATM    5  O1  LIG B   1      14.567  19.234   8.456  1.00 20.00           O
                 "load complex.pdb",
                 "show cartoon",
                 "show sticks",
-                "pseudoatom title_",
-                "set_color red_",
-                "set_color blue_",
+                "set_color purple_",
+                "set_color green_",
                 "select hbonds_",
                 "select hydrophobic_",
                 "select ionic_",
@@ -522,19 +436,16 @@ HETATM    5  O1  LIG B   1      14.567  19.234   8.456  1.00 20.00           O
             for component in atom_weights.keys():
                 structure_name = f"protein_{component.lower()}"
                 assert structure_name in content
-                assert f"pseudoatom title_{structure_name}" in content
 
-            # Verify side-by-side positioning
-            expected_positions = [
-                "translate [0, 0, 0], protein_mlff",
-                "translate [70, 0, 0], protein_electrostatics",
-                "translate [140, 0, 0], protein_zbl",
-                "translate [210, 0, 0], protein_dispersion",
-                "translate [280, 0, 0], protein_total"
-            ]
+            # Verify overlapping positioning (no translations)
+            assert "translate [" not in content
 
-            for position_cmd in expected_positions:
-                assert position_cmd in content
+            # Verify interaction detection is called only once
+            assert content.count("# Detect and visualize interactions") == 1
+
+            # Verify near_ligand selections are cleaned up
+            assert "delete near_ligand_protein_mlff" in content
+            assert "delete near_ligand_protein_electrostatics" in content
 
             # Verify session file path
             session_file = output_file.with_suffix(".pse")
@@ -548,14 +459,13 @@ HETATM    5  O1  LIG B   1      14.567  19.234   8.456  1.00 20.00           O
 
             output_file = Path(temp_dir) / "single.pml"
             atom_weights = {"Total": {"1": 1.0}}
-            center_of_mass = np.array([0, 0, 0])
 
-            result = create_pymol_session(pdb_file, atom_weights, output_file, center_of_mass)
+            result = create_pymol_session(pdb_file, atom_weights, output_file)
 
             assert Path(result).exists()
             content = Path(result).read_text()
 
             # Should have single structure with no translation
-            assert "translate [0, 0, 0], protein_total" in content
+            assert "translate [" not in content
             assert "protein_total" in content
             assert "protein_mlff" not in content  # No other components

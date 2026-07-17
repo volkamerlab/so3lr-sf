@@ -1,3 +1,0 @@
-[python]
-testingFramework = "pytest"
-mockingFramework = "pytest-mock"

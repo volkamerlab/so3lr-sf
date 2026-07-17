@@ -20,7 +20,8 @@ from src.molecule_loader import (
     load_ase_structure,
     prepare_mda_universe,
     create_residue_atom_mapping,
-    load_molecule_to_prolif
+    load_molecule_to_prolif,
+    extract_ligands
 )
 
 
@@ -324,3 +325,78 @@ class TestMoleculeLoader:
         # Test validate_structure with wrong type
         with pytest.raises(ValueError):
             validate_structure([1, 2, 3])
+
+
+class TestExtractLigands:
+    """Tests for extract_ligands functionality."""
+
+    @pytest.mark.unit
+    def test_extract_ligands_from_multi_sdf(self, multi_water_file, temp_dir):
+        """Test extracting ligands from multi-structure SDF file."""
+        ligand_files = extract_ligands(multi_water_file, output_dir=temp_dir)
+
+        assert len(ligand_files) == 2
+
+        for i, ligand_file in enumerate(ligand_files, 1):
+            assert Path(ligand_file).exists()
+            assert Path(ligand_file).name == f"ligand_{i:03d}.xyz"
+
+            # Check that each ligand can be read
+            atoms = load_ase_structure(ligand_file)[0]
+            assert len(atoms) == 3  # Water molecule
+
+    @pytest.mark.unit
+    def test_extract_ligands_single_structure(self, water_files, temp_dir):
+        """Test extracting from single-structure file."""
+        ligand_files = extract_ligands(water_files['sdf'], output_dir=temp_dir)
+
+        assert len(ligand_files) == 1
+        assert Path(ligand_files[0]).exists()
+
+    @pytest.mark.unit
+    def test_extract_ligands_default_output_dir(self, multi_water_file):
+        """Test extraction with default output directory."""
+        ligand_files = extract_ligands(multi_water_file)
+
+        expected_dir = multi_water_file.parent / f"{multi_water_file.stem}_individual"
+
+        for ligand_file in ligand_files:
+            assert Path(ligand_file).parent == expected_dir
+
+        # Cleanup created directory
+        import shutil
+        if expected_dir.exists():
+            shutil.rmtree(expected_dir)
+
+    @pytest.mark.unit
+    def test_extract_ligands_custom_prefix(self, multi_water_file, temp_dir):
+        """Test extraction with custom naming prefix."""
+        ligand_files = extract_ligands(
+            multi_water_file,
+            output_dir=temp_dir,
+            naming_prefix="molecule"
+        )
+
+        for i, ligand_file in enumerate(ligand_files, 1):
+            assert Path(ligand_file).name == f"molecule_{i:03d}.xyz"
+
+    @pytest.mark.unit
+    def test_extract_ligands_validation_error(self, temp_dir):
+        """Test extraction with invalid structures."""
+        # Create a fake multi-structure file with invalid content
+        fake_sdf = temp_dir / "fake.sdf"
+        fake_sdf.write_text("invalid sdf content")
+
+        with pytest.raises((ValueError, IndexError, OSError)):
+            extract_ligands(fake_sdf, output_dir=temp_dir)
+
+    @pytest.mark.unit
+    def test_extract_ligands_from_xyz_trajectory(self, multi_water_xyz_file, temp_dir):
+        """Test extracting from XYZ trajectory-like file."""
+        ligand_files = extract_ligands(multi_water_xyz_file, output_dir=temp_dir)
+
+        assert len(ligand_files) == 2
+        for ligand_file in ligand_files:
+            assert Path(ligand_file).exists()
+            atoms = load_ase_structure(ligand_file)[0]
+            assert len(atoms) == 3

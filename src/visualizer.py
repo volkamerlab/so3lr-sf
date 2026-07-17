@@ -119,61 +119,6 @@ def add_interaction_detection(f, structure_name: str) -> None:
     f.write(f"color yellow, hbond_dist_{structure_name}\n")
     f.write(f"set dash_width, 2, hbond_dist_{structure_name}\n")
 
-
-def add_component_title(f, structure_name: str, component: str, center_of_mass: np.ndarray, x_offset: float) -> None:
-    """
-    Add a floating title label for an energy component above the structure.
-
-    This function creates a pseudoatom positioned above the center of mass of a structure
-    and adds a text label to identify the energy component being visualized. The title
-    helps users distinguish between different energy components when multiple structures
-    are displayed side by side.
-
-    Title Positioning:
-    - X coordinate: Center of mass X + horizontal offset (for side-by-side structures)
-    - Y coordinate: Center of mass Y (no vertical offset)
-    - Z coordinate: Center of mass Z + 50 Å (positioned above the structure)
-
-    Styling Properties:
-    - Label size: 25 (large enough to be clearly visible)
-    - Label color: Black (high contrast against white background)
-    - Pseudoatom: Small blue sphere (0.2 scale factor)
-    - The pseudoatom serves as an anchor point for the floating label
-
-    Args:
-        f: File handle for writing PyMOL commands
-        structure_name: Name identifier for the protein structure in PyMOL
-        component: Name of the energy component (e.g., 'MLFF', 'Electrostatics', 'Total')
-        center_of_mass: 3D coordinates [x, y, z] of the structure's center of mass
-        x_offset: Horizontal translation offset for positioning multiple structures
-
-    Returns:
-        None (writes commands directly to file)
-
-    Example PyMOL objects created:
-        - title_{structure_name}: Pseudoatom positioned above structure center
-        - Label text displaying the component name
-
-    Note:
-        The pseudoatom is styled as a small blue sphere to be minimally intrusive
-        while providing a clear anchor point for the text label.
-    """
-    # Calculate title position above the center of this translated structure
-    title_x = center_of_mass[0] + x_offset  # Center X + translation offset
-    title_y = center_of_mass[1]             # Center Y (no Y translation)
-    title_z = center_of_mass[2] + 50        # Center Z + height offset
-
-    # Add energy component title using a pseudoatom positioned at structure center
-    f.write(f"# Add floating title for {component} energy component at structure center\n")
-    f.write(f"pseudoatom title_{structure_name}, pos=[{title_x:.3f}, {title_y:.3f}, {title_z:.3f}]\n")
-    f.write(f"label title_{structure_name}, '{component}'\n")
-    f.write(f"set label_size, 25, title_{structure_name}\n")
-    f.write(f"set label_color, black, title_{structure_name}\n")
-    f.write(f"show spheres, title_{structure_name}\n")
-    f.write(f"set sphere_scale, 0.2, title_{structure_name}\n")
-    f.write(f"color blue, title_{structure_name}\n")
-
-
 def apply_energy_coloring(f, structure_name: str, component: str, atom_weights: Dict[str, float]) -> List[int]:
     """
     Apply energy-based gradient coloring to atoms and return contributing atom indices.
@@ -185,14 +130,15 @@ def apply_energy_coloring(f, structure_name: str, component: str, atom_weights: 
 
     Coloring Algorithm:
     - Threshold: 5% of maximum absolute energy value
-    - Positive energies: Gray → Red gradient (unfavorable interactions)
-    - Negative energies: Gray → Blue gradient (favorable interactions)
+    - Positive energies: Gray → Purple gradient (destabilizing interactions)
+    - Negative energies: Gray → Green gradient (stabilizing interactions)
     - Intensity scales linearly with energy magnitude
     - Base gray color: RGB(0.7, 0.7, 0.7)
-    - Color transitions: Gray + 30% red/blue component based on intensity
+    - Color transitions: Gray + 30% purple/green component based on intensity
 
     Color Calculation:
-    - Positive: R = 0.7 + 0.3*intensity, G/B = 0.7*(1-intensity)
+    - Positive: R/B = 0.7 + 0.3*intensity, G = 0.7*(1-intensity) (purple)
+    - Negative: G = 0.7 + 0.3*intensity, R/B = 0.7*(1-intensity) (green)
     - Negative: B = 0.7 + 0.3*intensity, R/G = 0.7*(1-intensity)
     - Intensity = |energy_value| / max_absolute_energy
 
@@ -213,7 +159,7 @@ def apply_energy_coloring(f, structure_name: str, component: str, atom_weights: 
 
     Note:
         - Invalid energy values are logged and skipped
-        - Color names follow pattern: {red/blue}_{component}_{index}
+        - Color names follow pattern: {purple/green}_{component}_{index}
         - Assumes atoms are within near_ligand_{structure_name} selection
     """
     # Filter out invalid energy values first
@@ -249,17 +195,17 @@ def apply_energy_coloring(f, structure_name: str, component: str, atom_weights: 
             intensity = abs(energy_val) / max_abs
 
             if energy_val > 0:
-                # Positive energy: gray → red gradient
-                r = 0.7 + 0.3 * intensity
+                # Positive energy: gray → purple gradient (destabilizing)
+                r = 0.7 + 0.3 * intensity  # Add red component for purple
                 g = 0.7 * (1 - intensity)
-                b = 0.7 * (1 - intensity)
-                color_name = f"red_{component}_{i}"
+                b = 0.7 + 0.3 * intensity  # Add blue component for purple
+                color_name = f"purple_{component}_{i}"
             else:
-                # Negative energy: gray → blue gradient
+                # Negative energy: gray → green gradient (stabilizing)
                 r = 0.7 * (1 - intensity)
-                g = 0.7 * (1 - intensity)
-                b = 0.7 + 0.3 * intensity
-                color_name = f"blue_{component}_{i}"
+                g = 0.7 + 0.3 * intensity  # Add green component
+                b = 0.7 * (1 - intensity)
+                color_name = f"green_{component}_{i}"
 
             # Define the gradient color and apply it
             f.write(f"set_color {color_name}, [{r:.3f}, {g:.3f}, {b:.3f}]\n")
@@ -273,8 +219,8 @@ def apply_energy_coloring(f, structure_name: str, component: str, atom_weights: 
 
 def create_pymol_session(complex_path: Union[str, Path],
                         atom_weights_mapped: Dict[str, List[float]],
-                        output_path: Union[str, Path],
-                        center_of_mass: np.ndarray) -> str:
+                        output_path: Union[str, Path]
+                        ) -> str:
     """
     Create a PyMOL session file for protein-ligand complex energy visualization.
 
@@ -282,10 +228,10 @@ def create_pymol_session(complex_path: Union[str, Path],
     - Protein backbone shown as cartoon (gray)
     - Ligand shown as sticks with energy-based gradient coloring
     - Only residues with significant energy contributions (>5% threshold) shown as sticks
-    - Gray-to-red gradient for positive (unfavorable) energies
-    - Gray-to-blue gradient for negative (favorable) energies
+    - Gray-to-purple gradient for positive (destabilizing) energies
+    - Gray-to-green gradient for negative (stabilizing) energies
     - Automatic detection of protein-ligand interactions (H-bonds, hydrophobic, ionic, aromatic)
-    - Analysis limited to atoms within 10 Å of ligand for performance
+    - Analysis limited to atoms within 5 Å of ligand for performance
 
     Args:
         complex_path: Path to protein-ligand complex structure file
@@ -332,14 +278,12 @@ def create_pymol_session(complex_path: Union[str, Path],
                 f"{len(atom_weights_mapped.keys())} energy components")
 
     # Calculate center of mass of the structure
-
     with open(output_path, 'w') as f:
-        # Header
+
         f.write(f"# PyMOL Protein Energy Visualization\n")
         f.write(f"# Generated from: {complex_path}\n")
         f.write(f"# Components: {', '.join(atom_weights_mapped.keys())}\n\n")
 
-        # Load and setup
         f.write("# Clear workspace\n")
         f.write("delete all\n")
         f.write("bg_color white\n\n")
@@ -349,10 +293,6 @@ def create_pymol_session(complex_path: Union[str, Path],
             structure_name = f"protein_{component.lower()}"
             f.write(f"# Load structure for {component} component\n")
             f.write(f"load {complex_path.name}, {structure_name}\n")
-
-            # Position structures side by side
-            x_offset = i * 70  # 50 Å separation
-            f.write(f"translate [{x_offset}, 0, 0], {structure_name}\n")
 
             # Set basic representation for protein-ligand complex
             f.write(f"# Hide everything first\n")
@@ -366,11 +306,6 @@ def create_pymol_session(complex_path: Union[str, Path],
             f.write(f"show sticks, {structure_name} and organic\n")
             f.write(f"color gray60, {structure_name} and organic\n")
 
-            # Note: Sticks for contributing atoms will be set after energy analysis
-
-            # Add energy component title above the structure
-            add_component_title(f, structure_name, component, center_of_mass, x_offset)
-
             # Set all atoms to gray then apply gradient energy-based coloring only to atoms within 10 Å of ligand
             f.write(f"# Gradient energy-based coloring for {component} component\n")
             f.write(f"# Set all atoms to gray first, then color significant energy atoms\n")
@@ -378,7 +313,7 @@ def create_pymol_session(complex_path: Union[str, Path],
             # Create selection for atoms within 10 Å of ligand
             f.write(f"select near_ligand_{structure_name}, {structure_name} and (all within 10 of organic)\n")
 
-            # Set all atoms within 10 Å to gray as base color (single command)
+            # Set all atoms within 10 Å to gray as base color
             f.write(f"color gray70, near_ligand_{structure_name}\n")
 
             # Apply energy-based coloring and get contributing atoms
@@ -390,10 +325,17 @@ def create_pymol_session(complex_path: Union[str, Path],
                 f.write(f"# Show sticks for whole residues containing contributing atoms\n")
                 f.write(f"show sticks, {structure_name} and polymer and (byres (id {contributing_ids}))\n")
 
-            # Add protein-ligand interaction detection and visualization
-            add_interaction_detection(f, structure_name)
+            # Delete the near_ligand selection to clean up
+            f.write(f"delete near_ligand_{structure_name}\n")
 
             f.write("\n\n")
+
+        # Add protein-ligand interaction using first component structure
+        structure_name = f"protein_total"
+        f.write("# Protein-ligand interaction detection (shared across all energy components)\n")
+        add_interaction_detection(f, structure_name='protein_total')
+        
+        f.write("\n")
 
         # Final setup
         f.write("# Final visualization setup\n")
@@ -401,11 +343,6 @@ def create_pymol_session(complex_path: Union[str, Path],
         f.write("set ray_opaque_background, off\n")
         f.write("set ray_trace_mode, 1\n")
         f.write("orient\n\n")
-
-        # Create color scale legend info
-        f.write("# Color scale information:\n")
-        f.write("# Blue = Low energy values (normalized 0)\n")
-        f.write("# Red = High energy values (normalized 1)\n")
 
         # Save session
         session_file = output_path.with_suffix(".pse")
