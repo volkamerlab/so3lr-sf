@@ -1,0 +1,29 @@
+# Version control / tooling
+.git
+.github
+.qodo
+.vscode
+.claude
+
+# Local virtual env and caches
+.venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+coverage
+*.cover
+
+# Large local data / benchmarks not needed to build the image
+runtime_benchmark
+runtime_benchmark.zip
+fep-benchmark-runtime
+trial_solrsf
+so3lr-sf_py
+example
+logo
+*.ipynb
+*.log
+
+# so3lr model params are bundled with the so3lr package
+so3lr/

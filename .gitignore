@@ -15,7 +15,8 @@ example_so3lr_per_atom_energies.py
 src/__pycache_*
 _*
 tests/test_data/*
-Docker/*
+# ignore docker build cache/artifacts but keep Docker/Dockerfile tracked
+Docker/.docker*
 protein_ligand_analyzer/*
 
 debug*
