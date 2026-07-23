@@ -1,82 +1,57 @@
-# Use NVIDIA CUDA runtime base image compatible with JAX 0.5.3
+# syntax=docker/dockerfile:1
+
+# NVIDIA CUDA 12 base image, compatible with JAX 0.5.3.
 FROM nvidia/cuda:12.6.3-devel-ubuntu24.04
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV POETRY_HOME="/opt/poetry"
-ENV POETRY_CACHE_DIR=/opt/poetry-cache
-ENV POETRY_VENV_IN_PROJECT=1
-ENV PATH="$POETRY_HOME/bin:$PATH"
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    # uv configuration
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
 
-# Install system dependencies (Python 3.12 is default in Ubuntu 24.04)
-RUN apt-get update && apt-get install -y \
-    python3.12 \
-    python3.12-dev \
-    python3.12-venv \
-    python3-pip \
+# System dependencies. git is required for the git-sourced deps (so3lr, mlff);
+# build-essential/curl support building any sdist-only wheels; the libX*/libGL/
+# libglib runtime libs are required by rdkit's drawing module (pulled in by prolif).
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
-    wget \
+    ca-certificates \
     build-essential \
-    libssl-dev \
-    libffi-dev \
-    libbz2-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libncurses5-dev \
-    libncursesw5-dev \
-    xz-utils \
-    tk-dev \
-    libxml2-dev \
-    libxmlsec1-dev \
-    liblzma-dev \
+    libxrender1 \
+    libxext6 \
+    libsm6 \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create symlink for python3.12 to python
-RUN ln -sf /usr/bin/python3.12 /usr/bin/python && \
-    ln -sf /usr/bin/python3.12 /usr/bin/python3
+# Install uv from its official image (static binary, pinned to the version
+# used to generate uv.lock).
+COPY --from=ghcr.io/astral-sh/uv:0.11.29 /uv /uvx /usr/local/bin/
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 -
-RUN chmod +x $POETRY_HOME/bin/poetry
-
-# Set working directory
 WORKDIR /app
 
-# Copy poetry configuration files
-COPY pyproject.toml poetry.lock* ./
+# 1) Resolve & install dependencies first for better layer caching.
+#    Only the manifest, lock file and readme (referenced by the project
+#    metadata) are needed here; the project itself is installed later.
+COPY pyproject.toml uv.lock README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-editable --python 3.12
 
-# Configure Poetry and install dependencies only (handle externally managed environment)
-RUN poetry config virtualenvs.create true && \
-    poetry config virtualenvs.in-project true && \
-    poetry install --with test --no-interaction --no-ansi --no-root
+# 2) Copy the project source and install the project itself.
+COPY so3lr_sf.py pytest.ini ./
+COPY src ./src
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-editable --python 3.12
 
-# Copy the rest of the application
-COPY . .
+# 3) Add the JAX CUDA 12 plugin so JAX can use the GPU. The base pin in
+#    pyproject.toml is CPU-only jaxlib; this layers the CUDA PJRT plugin on top.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install "jax[cuda12]==0.5.3"
 
-# Install the current project in development mode
-RUN poetry install --only-root
-
-# Install JAX with CUDA support (compatible with CUDA 12.6)
-RUN .venv/bin/pip install --upgrade "jax[cuda12]"==0.5.3 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-
-# Download SO3LR model parameters
-RUN mkdir -p so3lr && \
-    cd so3lr && \
-    curl -L https://github.com/general-molecular-simulations/so3lr/archive/main.tar.gz | tar -xz --strip-components=2 so3lr-main/so3lr/params
-
-# Set up proper permissions
-RUN chmod +x setup.py
-
-# Expose port (if needed for any web services)
-EXPOSE 8080
-
-# Activate virtual environment by default
-ENV PATH="/app/.venv/bin:$PATH"
-ENV VIRTUAL_ENV="/app/.venv"
-
-# Create activation script for interactive shells
+# Interactive shells start inside the project virtual environment.
 RUN echo 'source /app/.venv/bin/activate' >> /root/.bashrc
 
 # Default command
