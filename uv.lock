@@ -1330,7 +1330,7 @@ wheels = [
 [[package]]
 name = "mlff"
 version = "1.0.0"
-source = { git = "https://github.com/hamzaibrahim21/mlff.git?branch=v1.0-eda-import#72bcce02546b5a58f7915934dede4fd449f8df15" }
+source = { git = "https://github.com/hamzaibrahim21/mlff.git?branch=v1.0-eda-import#5029c0312d25fbc789cf9c9983d480be75647864" }
 dependencies = [
     { name = "ase" },
     { name = "clu" },
