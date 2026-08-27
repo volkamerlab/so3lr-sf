@@ -189,6 +189,56 @@ class So3lrSfCalculator:
             logger.debug("JAX not available, using MLFF calculator")
             return self._calculate_energy_so3lr(atoms)
 
+    @staticmethod
+    def _residue_charge_info(atoms: Atoms):
+        """
+        Build per-fragment charge info for a separated dimer.
+
+        mlff conserves charge per fragment when the graph carries `residue_charge` /
+        `residue_segments`, instead of spreading one total charge over every atom. The
+        last entry of `residue_charge` is reserved for padding nodes, matching what
+        mlff's own dataloader emits; the jax-md graph has no padding nodes, so nothing
+        is ever assigned to it here.
+
+        Only a structure tagged 'dimer_translated' is split. Anything else returns
+        (None, None) and falls back to global charge conservation.
+
+        Returns:
+            Tuple of (residue_charge, residue_segments) or (None, None)
+        """
+        if atoms.info.get('structure_type') != 'dimer_translated':
+            return None, None
+
+        charge_a = atoms.info.get('charge_a')
+        charge_b = atoms.info.get('charge_b')
+        num_a = atoms.info.get('num_a')
+        num_b = atoms.info.get('num_b')
+        if any(v is None for v in (charge_a, charge_b, num_a, num_b)):
+            logger.warning("structure_type='dimer_translated' but charge_a/charge_b/num_a/num_b "
+                           "are incomplete; falling back to global charge conservation")
+            return None, None
+
+        num_a, num_b = int(num_a), int(num_b)
+        if num_a + num_b != len(atoms):
+            logger.warning(f"Fragment sizes ({num_a} + {num_b}) do not match the structure "
+                           f"({len(atoms)} atoms); falling back to global charge conservation")
+            return None, None
+        if num_a == 0 or num_b == 0:
+            logger.warning("One fragment is empty; falling back to global charge conservation")
+            return None, None
+
+        charge_a, charge_b = int(charge_a), int(charge_b)
+        total_charge = atoms.info.get('charge')
+        if total_charge is not None and charge_a + charge_b != int(total_charge):
+            logger.warning(f"Fragment charges ({charge_a} + {charge_b}) do not sum to the total "
+                           f"charge ({int(total_charge)}); using the fragment charges")
+
+        residue_charge = np.array([charge_a, charge_b, 0])
+        residue_segments = np.concatenate([np.repeat(0, num_a), np.repeat(1, num_b)])
+        logger.debug(f"Per-fragment charges: A={charge_a} ({num_a} atoms), "
+                     f"B={charge_b} ({num_b} atoms)")
+        return residue_charge, residue_segments
+
     def _calculate_energy_jax_md(self, atoms: Atoms) -> float:
         """Calculate energy using JAX-MD for enhanced performance."""
         # logger.debug("Using JAX-MD mode for energy calculation")
@@ -205,6 +255,8 @@ class So3lrSfCalculator:
         multiplicity = atoms.info.get('multiplicity')
         num_unpaired_electrons = float(multiplicity - 1) if multiplicity is not None else 0.0
         logger.debug(f"JAX-MD total_charge={total_charge}, num_unpaired_electrons={num_unpaired_electrons}")
+
+        residue_charge, residue_segments = self._residue_charge_info(atoms)
 
         # Setup displacement function for free boundary conditions
         displacement, shift = space.free()
@@ -248,12 +300,20 @@ class So3lrSfCalculator:
         )
         total_charge_arr = jnp.asarray([total_charge], dtype=jax_dtype)
         num_unpaired_arr = jnp.asarray([num_unpaired_electrons], dtype=jax_dtype)
+        residue_charge_arr = (
+            jnp.asarray(residue_charge, dtype=jax_dtype) if residue_charge is not None else None
+        )
+        residue_segments_arr = (
+            jnp.asarray(residue_segments, dtype=jnp.int32) if residue_segments is not None else None
+        )
 
         def energy_fn(R, neighbor, neighbor_lr, has_aux=False, **energy_fn_kwargs):
             graph = featurizer(R, neighbor, neighbor_lr, **energy_fn_kwargs)
             graph = graph._replace(
                 total_charge=total_charge_arr,
                 num_unpaired_electrons=num_unpaired_arr,
+                residue_charge=residue_charge_arr,
+                residue_segments=residue_segments_arr,
             )
             if has_aux:
                 return potential(graph, has_aux=True)
