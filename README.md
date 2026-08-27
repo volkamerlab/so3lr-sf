@@ -98,7 +98,7 @@ src/
 ├── interaction_energy.py              # Main energy calculation functions
 ├── optimization.py                    # Structure optimization through constraint or free optimization
 ├── constraint.py                      # Handle optimization constraints either by-atom or by-residue
-├── trim.py                            # Trim protein structure either by-atom or by-residue
+├── trim.py                            # Trim protein around ligand: by-residue (PDB, with gap bridging + H-capping) or by-atom (XYZ)
 ├── explainability.py                  # Energy-based explainability analysis and visualization
 ├── explain_utils.py                   # Utility functions for explainability analysis
 ├── molecule_loader.py                 # Molecule loading and file format handling
@@ -150,6 +150,13 @@ results_steps_{#_steps}_fmax{FMAX}/
 
 ### Trimming Parameters
 - `--trim-lig FILE`: Specific ligand file to use for trimming
+
+For **PDB** input, trimming keeps complete residues, bridges short sequence gaps
+(up to 2 missing residues) between selected residues to preserve local chain
+continuity, and caps every backbone/side-chain valence severed at a truncation
+boundary with a single hydrogen. For **XYZ** input only individual atoms within
+the radius are kept (no residue completeness, gap bridging, or capping) and a
+warning is emitted — use PDB input for the full protocol.
 
 ### Optimization Parameters
 - `--optimize FLOAT`: Enable optimization with specified radius around ligand in Angstroms (default: 4.0 if no value provided)

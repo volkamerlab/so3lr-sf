@@ -15,6 +15,9 @@ example_so3lr_per_atom_energies.py
 src/__pycache_*
 _*
 tests/test_data/*
+# keep the small hand-made fixtures the trim tests need
+!tests/test_data/peptide.pdb
+!tests/test_data/peptide_lig.xyz
 Docker/*
 protein_ligand_analyzer/*
 

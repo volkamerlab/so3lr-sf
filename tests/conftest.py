@@ -299,6 +299,24 @@ def alanine_files(test_data_dir):
 
 
 @pytest.fixture
+def peptide_files(test_data_dir):
+    """Get the multi-residue peptide fixture used for trim gap-bridging/capping tests."""
+    if not test_data_dir.exists():
+        pytest.skip("test_data directory not found")
+
+    files = {}
+    for key, name in [('pdb', 'peptide.pdb'), ('ligand', 'peptide_lig.xyz')]:
+        path = test_data_dir / name
+        if path.exists():
+            files[key] = path
+
+    if len(files) != 2:
+        pytest.skip("peptide fixture files not found in test_data")
+
+    return files
+
+
+@pytest.fixture
 def sample_energy_components():
     """Sample per-atom energy components for testing explainability."""
     return {
