@@ -16,17 +16,21 @@ try:
     import jax
     import jax.numpy as jnp
     from jax_md import space
-    from so3lr import to_jax_md, So3lrPotential, So3lrCalculator
+    import so3lr
+    from so3lr import to_jax_md, So3lrCalculator
     from so3lr.jaxmd_utils import neighbor_list_featurizer
+    from mlff.mdx.potential import MLFFPotentialSparse
     _jax_available = True
 except ImportError:
     _jax_available = False
 
 from .utils import validate_structure
 from .molecule_loader import load_ase_structure
-from .jaxmd_eda import so3lr_potential_eda
 
 logger = logging.getLogger(__name__)
+
+# Long-range cutoff (Angstroms) for dispersion and the long-range neighbour list.
+DISPERSION_LR_CUTOFF = 1000.0
 
 class So3lrSfCalculator:
     """
@@ -37,7 +41,7 @@ class So3lrSfCalculator:
     to avoid redundant computations.
 
     Attributes:
-        lr_cutoff (float): Long-range interaction cutoff distance
+        elec_lr_cutoff (float): Electrostatic long-range cutoff distance
         dtype (type): Numerical precision for calculations
         dp (bool): Double precision flag
         output_per_atom_energy_components (bool): Whether per-atom components are enabled
@@ -45,32 +49,37 @@ class So3lrSfCalculator:
 
     def __init__(
         self,
-        lr_cutoff: float = 1000.0,
         dispersion_energy_lr_cutoff_damping: float = 2.0,
         dtype: type = np.float32,
         output_per_atom_energy_components: bool = False,
-        dp: bool = False
+        dp: bool = False,
+        elec_lr_cutoff: float = 10.0
     ):
         """
         Initialize the SO3LR-SF energy calculator.
 
         The SO3LR model parameters are always loaded from the bundled `so3lr`
-        package (via `So3lrPotential` / `So3lrCalculator`), so no model path
-        is required.
+        package, so no model path is required.
 
         Args:
-            lr_cutoff: Long-range cutoff distance in Angstroms (default: 12.0)
             dispersion_energy_lr_cutoff_damping: Dispersion energy cutoff damping factor (default: 2.0)
             dtype: Numerical precision - np.float32 for speed, np.float64 for accuracy
             output_per_atom_energy_components: Enable per-atom energy decomposition
             dp: Enable double precision (float64). Overrides dtype when True.
+            elec_lr_cutoff: Long-range cutoff (Angstroms) for the electrostatic term
+                (default: 10.0). Dispersion and the long-range neighbour list stay pinned at
+                DISPERSION_LR_CUTOFF (1000 A). Recommended: 10 for ranking / relative potency,
+                1000 for absolute interaction energies compared to DFT.
 
         Example:
-            >>> # Basic calculator (JAX-MD, if failed, falls back to MLFF)
+            >>> # Basic calculator (electrostatics cut at 10 A, dispersion at 1000 A)
             >>> calc = So3lrSfCalculator()
             >>>
-            >>> # Calculator with EDA (JAX-MD, if failed, falls back to MLFF)
+            >>> # Calculator with EDA
             >>> calc = So3lrSfCalculator(output_per_atom_energy_components=True)
+            >>>
+            >>> # Electrostatics cut at 10 A, dispersion still at 1000 A
+            >>> calc = So3lrSfCalculator(elec_lr_cutoff=10.0)
         """
         # Handle double precision flag
         if dp:
@@ -84,8 +93,8 @@ class So3lrSfCalculator:
             if _jax_available and dtype != np.float64:
                 jax.config.update("jax_enable_x64", False)
 
-        self.lr_cutoff = lr_cutoff
         self.dispersion_energy_lr_cutoff_damping = dispersion_energy_lr_cutoff_damping
+        self.elec_lr_cutoff = elec_lr_cutoff
         self.dp = dp
         self.output_per_atom_energy_components = output_per_atom_energy_components
 
@@ -106,8 +115,9 @@ class So3lrSfCalculator:
     def _init_so3lr_calculator(self) -> None:
         """Initialize the SO3LR calculator."""
         try:
-            logger.debug("Initializing SO3LR calculator from So3lrPotential")
-            logger.debug(f"Calculator parameters: lr_cutoff={self.lr_cutoff}, "
+            logger.debug("Initializing SO3LR calculator (ASE So3lrCalculator fallback)")
+            logger.debug(f"Calculator parameters: lr_cutoff={DISPERSION_LR_CUTOFF}, "
+                        f"elec_lr_cutoff={self.elec_lr_cutoff}, "
                         f"dispersion_damping={self.dispersion_energy_lr_cutoff_damping}, "
                         f"output_per_atom={self.output_per_atom_energy_components}")
 
@@ -132,7 +142,7 @@ class So3lrSfCalculator:
 
             try:
                 self._calculator = So3lrCalculator(
-                    lr_cutoff=self.lr_cutoff,
+                    lr_cutoff=DISPERSION_LR_CUTOFF,
                     dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping,
                     calculate_stress=False,
                     dtype=self.dtype,
@@ -239,6 +249,31 @@ class So3lrSfCalculator:
                      f"B={charge_b} ({num_b} atoms)")
         return residue_charge, residue_segments
 
+    def _build_potential(self, jax_dtype):
+        """Build the bundled SO3LR potential with the electrostatic long-range
+        cutoff decoupled from the dispersion / neighbour-list cutoff.
+        """
+        long_range_kwargs = dict(
+            cutoff_lr=DISPERSION_LR_CUTOFF,
+            dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping,
+            neighborlist_format_lr='ordered_sparse',
+            coulomb_kspace_do_ewald=False,
+            coulomb_kspace_interp_nodes=4,
+            electrostatic_cutoff_lr=self.elec_lr_cutoff,
+        )
+        extra_kwargs = {}
+        if self.output_per_atom_energy_components:
+            extra_kwargs['output_intermediate_quantities'] = [
+                'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'
+            ]
+        return MLFFPotentialSparse.create_from_workdir(
+            workdir=Path(so3lr.__file__).parent / 'params',
+            from_file=True,
+            dtype=jax_dtype,
+            long_range_kwargs=long_range_kwargs,
+            **extra_kwargs,
+        )
+
     def _calculate_energy_jax_md(self, atoms: Atoms) -> float:
         """Calculate energy using JAX-MD for enhanced performance."""
         # logger.debug("Using JAX-MD mode for energy calculation")
@@ -261,20 +296,7 @@ class So3lrSfCalculator:
         # Setup displacement function for free boundary conditions
         displacement, shift = space.free()
 
-        # Choose potential based on EDA requirements
-        print(f"Output per-atom energy components enabled: {self.lr_cutoff}, {self.dispersion_energy_lr_cutoff_damping}")
-        if self.output_per_atom_energy_components:
-            potential = so3lr_potential_eda(
-                dtype=jax_dtype,
-                cutoff_lr=self.lr_cutoff,
-                dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping
-            )
-        else:
-            potential = So3lrPotential(
-                dtype=jax_dtype,
-                lr_cutoff=self.lr_cutoff,
-                dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping,
-            )
+        potential = self._build_potential(jax_dtype)
 
 
         # Neighbor lists are charge-independent, so reuse so3lr's to_jax_md for

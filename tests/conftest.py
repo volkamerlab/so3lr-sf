@@ -16,7 +16,7 @@ import numpy as np
 class MockSo3lrSfCalculator:
     def __init__(self, *args, **kwargs):
         self.output_per_atom_energy_components = kwargs.get('output_per_atom_energy_components', False)
-        self.lr_cutoff = kwargs.get('lr_cutoff', 12.0)
+        self.elec_lr_cutoff = kwargs.get('elec_lr_cutoff', 10.0)
         self.dtype = kwargs.get('dtype', np.float32)
         self.use_jax_md = kwargs.get('use_jax_md', False)  # Default to MLFF mode for tests
         self._calculator = Mock()

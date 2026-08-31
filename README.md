@@ -194,7 +194,9 @@ warning is emitted — use PDB input for the full protocol.
 - `--steps INT`: Maximum optimization steps (default: 100)
 
 ### Model Parameters
-- `--lr-cutoff FLOAT`: Long-range interaction cutoff distance in Angstroms (default: 1000.0)
+- `--elec-lr-cutoff FLOAT`: Long-range cutoff (Angstroms) for the electrostatic term (default: 10.0).
+  Dispersion and the long-range neighbour list are pinned to 1000 Å. Recommended: **10** for
+  ranking / relative potency, **1000** for absolute interaction energies compared to DFT.
 - `--dp`: Enable double precision (float64) for JAX-MD powered calculations
 
 ### Charge Parameters

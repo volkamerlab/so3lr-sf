@@ -24,16 +24,16 @@ class TestSo3lrSfCalculator:
     def test_calculator_initialization_basic(self, mock_calculator):
         """Test basic calculator initialization with mock."""
         # Use the mock calculator from fixture
-        assert hasattr(mock_calculator, 'lr_cutoff')
+        assert hasattr(mock_calculator, 'elec_lr_cutoff')
         assert hasattr(mock_calculator, 'dtype')
         assert hasattr(mock_calculator, 'output_per_atom_energy_components')
 
     @pytest.mark.unit
     def test_calculator_initialization_failure(self, mock_calculator):
         """Test initialization with various parameter configurations."""
-        # Test with invalid lr_cutoff (negative value)
-        mock_calculator.lr_cutoff = -5.0
-        assert mock_calculator.lr_cutoff == -5.0
+        # Test with invalid elec_lr_cutoff (negative value)
+        mock_calculator.elec_lr_cutoff = -5.0
+        assert mock_calculator.elec_lr_cutoff == -5.0
 
         # Test with extreme dtype
         mock_calculator.dtype = np.float16
@@ -191,10 +191,88 @@ class TestSo3lrSfCalculator:
     def test_calculator_properties(self, mock_calculator):
         """Test calculator property access with mock."""
         # Set properties and test
-        mock_calculator.lr_cutoff = 15.0
+        mock_calculator.elec_lr_cutoff = 15.0
         mock_calculator.dtype = np.float64
         mock_calculator.output_per_atom_energy_components = True
 
-        assert mock_calculator.lr_cutoff == 15.0
+        assert mock_calculator.elec_lr_cutoff == 15.0
         assert mock_calculator.dtype == np.float64
         assert mock_calculator.output_per_atom_energy_components is True
+
+
+class TestElectrostaticLrCutoff:
+    """Tests for the electrostatic long-range cutoff (decoupled from the pinned dispersion cutoff)."""
+
+    @pytest.mark.unit
+    def test_stored_and_defaults(self):
+        """elec_lr_cutoff defaults to 10 A; there is no lr_cutoff argument."""
+        try:
+            from src.calculator import So3lrSfCalculator, DISPERSION_LR_CUTOFF
+        except ImportError as e:
+            pytest.skip(f"so3lr / JAX-MD stack not available: {e}")
+
+        assert So3lrSfCalculator().elec_lr_cutoff == 10.0
+        assert So3lrSfCalculator(elec_lr_cutoff=8.0).elec_lr_cutoff == 8.0
+        assert So3lrSfCalculator(elec_lr_cutoff=DISPERSION_LR_CUTOFF).elec_lr_cutoff == DISPERSION_LR_CUTOFF
+        with pytest.raises(TypeError):
+            So3lrSfCalculator(lr_cutoff=12.0)
+
+        # The CLI default matches, declared inline on the argument.
+        from so3lr_sf import setup_argument_parser
+        args = setup_argument_parser().parse_args(["--protein", "p.pdb", "--ligands", "l.sdf"])
+        assert args.elec_lr_cutoff == 10.0
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_equal_cutoff_reproduces_stock_so3lr_bitwise(self, water_files):
+        """elec_lr_cutoff == DISPERSION_LR_CUTOFF must reproduce stock single-cutoff So3lrPotential."""
+        try:
+            import jax.numpy as jnp
+            from jax_md import space
+            from so3lr import So3lrPotential, to_jax_md
+            from so3lr.jaxmd_utils import neighbor_list_featurizer
+            from src.calculator import So3lrSfCalculator, DISPERSION_LR_CUTOFF
+        except ImportError as e:
+            pytest.skip(f"so3lr / JAX-MD stack not available: {e}")
+
+        atoms = load_ase_structure(water_files['xyz'])[0]
+
+        # Reference: stock So3lrPotential at the pinned dispersion cutoff.
+        pos = jnp.asarray(atoms.get_positions(), dtype=jnp.float32)
+        z = jnp.asarray(atoms.get_atomic_numbers(), dtype=jnp.int32)
+        displacement, _ = space.free()
+        potential = So3lrPotential(dtype=jnp.float32, lr_cutoff=DISPERSION_LR_CUTOFF)
+        nfn, nfn_lr, _ = to_jax_md(
+            potential=potential, displacement_or_metric=displacement, box_size=None,
+            species=z, capacity_multiplier=1.25, buffer_size_multiplier_sr=1.25,
+            buffer_size_multiplier_lr=1.25, minimum_cell_size_multiplier_sr=1.0,
+            disable_cell_list=True, fractional_coordinates=False,
+        )
+        feat = neighbor_list_featurizer(displacement, z, fractional_coordinates=False)
+        nbrs = nfn.allocate(pos, box=None)
+        nbrs_lr = nfn_lr.allocate(pos, box=None)
+        graph = feat(pos, nbrs.idx, nbrs_lr.idx, box=None)
+        e_ref = float(potential(graph).sum())
+
+        e_equal = So3lrSfCalculator(elec_lr_cutoff=DISPERSION_LR_CUTOFF).calculate_energy(atoms)
+        assert e_equal == e_ref
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_shorter_cutoff_changes_energy(self, water_files):
+        """A shorter electrostatic cutoff moves the energy vs the pinned 1000 A cutoff."""
+        try:
+            from src.calculator import So3lrSfCalculator, DISPERSION_LR_CUTOFF
+        except ImportError as e:
+            pytest.skip(f"so3lr / JAX-MD stack not available: {e}")
+
+        atoms = load_ase_structure(water_files['xyz'])[0]
+
+        e_wide = So3lrSfCalculator(elec_lr_cutoff=DISPERSION_LR_CUTOFF).calculate_energy(atoms)
+        e_10 = So3lrSfCalculator(elec_lr_cutoff=10.0).calculate_energy(atoms)
+        e_4 = So3lrSfCalculator(elec_lr_cutoff=4.0).calculate_energy(atoms)
+
+        assert not np.isnan(e_10) and not np.isnan(e_4)
+        assert abs(e_10 - e_wide) > 1e-3
+        assert abs(e_4 - e_wide) > 1e-3
+        print(f"water: elec@1000={e_wide:.6f}  elec@10={e_10:.6f}  elec@4={e_4:.6f}")
