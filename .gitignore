@@ -15,6 +15,17 @@ example_so3lr_per_atom_energies.py
 src/__pycache_*
 _*
 tests/test_data/*
+# keep the small hand-made fixtures the trim tests need
+!tests/test_data/peptide.pdb
+!tests/test_data/peptide_lig.xyz
+compact_scoring*
+adapted*
+benchmarks*
+const_opt*
+results*
+trim_sweep*
+lr_cutoff*
+# ignore docker build cache/artifacts but keep Docker/Dockerfile tracked
 Docker/.docker*
 protein_ligand_analyzer/*
 
@@ -31,3 +42,9 @@ so3lr-sf_py/*
 coverage/
 *.cover
 .pytest_cache/
+*.log
+*pla15*
+
+# Model weights (fetched locally via scripts/fetch_models.sh; see README)
+models/*
+!models/MANIFEST.sha256
