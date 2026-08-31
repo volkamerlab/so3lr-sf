@@ -18,9 +18,6 @@ from .molecule_loader import load_ase_structure, create_residue_atom_mapping, pr
 
 logger = logging.getLogger(__name__)
 
-# Maximum number of consecutive missing residues to bridge back in when a chain
-# is fragmented by distance-based residue selection. Short gaps are filled to
-# preserve local backbone continuity; longer gaps are left as separate segments.
 MAX_BRIDGE_GAP = 2
 
 # Bond length (Angstrom) for a capping hydrogen, keyed by the element of the
@@ -30,7 +27,6 @@ _CAP_BOND_LENGTH = {"N": 1.01, "C": 1.09, "O": 0.96, "S": 1.34}
 _CAP_BOND_LENGTH_DEFAULT = 1.02
 
 # Cut-off distance (Angstrom) for a backbone peptide bond between the C of one
-# residue and the N of the next.
 _PEPTIDE_BOND_CUTOFF = 1.8
 
 
@@ -54,11 +50,6 @@ def trim_structure(
     - For XYZ files: Atom-based trimming (keeps individual atoms). Severed
       valences are still hydrogen-capped, but residue completeness and chain
       continuity cannot be guaranteed - use PDB input for the full protocol.
-
-    Capping hydrogens are appended after the kept protein atoms. In a PDB output
-    they carry no residue name/number (ASE fills those arrays with defaults), so
-    the capped file is suitable for single-point evaluation but may not round-trip
-    through a second residue-based pass.
 
     The trimmed structure is saved in the same format as the input protein (PDB files
     are saved as PDB, others as XYZ) and can be used for more efficient calculations
@@ -106,9 +97,7 @@ def trim_structure(
         trimming_method = "residue"
     elif protein_ext == '.xyz':
         # Atom-based trimming for non-PDB files. No topology is available, so the
-        # residue-completeness / gap-bridging / boundary-capping protocol cannot
-        # be applied - the cut can land anywhere, including mid-ring, where a
-        # capping hydrogen would be wrong. Emit a strong warning instead.
+        # residue-completeness / gap-bridging / boundary-capping protocol cannot be applied.
         logger.warning(f"Using atom-based trimming for {protein_ext.upper()} file: {protein_path.name}")
         logger.warning(
             "XYZ input: individual atoms are trimmed - residue completeness, "
@@ -183,12 +172,6 @@ def _saturate_open_valences(full_atoms: Atoms, kept_indices: List[int], logger) 
     The cap sits along the original bond direction (pointing at the now-removed
     partner, whose coordinates are still available in ``full_atoms``) at a short,
     element-appropriate distance from the boundary atom.
-
-    It is purely geometric (no topology needed). Because the residue-based path
-    keeps whole residues, the severed bonds it is asked to cap are backbone
-    peptide bonds, disulfides and covalent-ligand links - never a bond inside a
-    ring - so a single hydrogen per bond is always the right saturation.
-
     Args:
         full_atoms: The complete, untrimmed structure.
         kept_indices: Indices (into ``full_atoms``) that survive trimming.
@@ -204,10 +187,8 @@ def _saturate_open_valences(full_atoms: Atoms, kept_indices: List[int], logger) 
     positions = full_atoms.get_positions()
     symbols = full_atoms.get_chemical_symbols()
 
-    # Covalent-radius based bond perception on the full structure. Work on a
-    # copy with periodicity stripped: PDB files often carry a placeholder 1 A
-    # CRYST1 cell, and a tiny periodic box makes neighbour_list wrap every atom
-    # onto its own images and report thousands of spurious bonds.
+    # PDB files often carry a placeholder 1 A CRYST1 cell, and a tiny periodic box makes
+    # neighbour_list wrap every atom onto its own images and report thousands of spurious bonds.
     probe = full_atoms.copy()
     probe.set_pbc(False)
     probe.set_cell(None)
@@ -225,7 +206,7 @@ def _saturate_open_valences(full_atoms: Atoms, kept_indices: List[int], logger) 
         length = _CAP_BOND_LENGTH.get(symbols[a], _CAP_BOND_LENGTH_DEFAULT)
         caps.append(("H", positions[a] + (length / norm) * vec))
 
-    # Safety net: drop caps that would sit on top of each other.
+    # drop caps that would sit on top of each other.
     unique: CapList = []
     for sym, pos in caps:
         if any(np.linalg.norm(pos - kept_pos) < 0.3 for _, kept_pos in unique):
@@ -272,12 +253,14 @@ def _build_peptide_graph(residues: List[dict], protein_positions: np.ndarray):
 def _bridge_short_gaps(selected: set, next_of: dict, prev_of: dict, n_res: int,
                        max_gap: int = MAX_BRIDGE_GAP) -> set:
     """
-    Return the set of residues to add so selected residues stay contiguous.
-
-    Walks each backbone chain (via ``next_of``/``prev_of``) and, for every pair
-    of selected residues separated only by unselected residues, fills the gap
-    when it spans at most ``max_gap`` residues. Longer gaps are left as genuine
-    breaks between separate fragments.
+    Args:
+        selected: Set of residue indices that are already selected.
+        next_of: Dict mapping residue index to the next residue index in the chain.
+        prev_of: Dict mapping residue index to the previous residue index in the chain.
+        n_res: Total number of residues in the protein.
+        max_gap: Maximum number of consecutive missing residues to bridge.
+    Returns:
+        A set of residue indices to add so that selected residues stay contiguous.
     """
     bridged: set = set()
     if max_gap < 1:
