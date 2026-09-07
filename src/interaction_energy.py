@@ -100,21 +100,11 @@ def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, cal
     ligand_charge = ligand_atoms.info.get('charge', 0)
 
     atomic_numbers = np.concatenate((protein_atoms.get_atomic_numbers(), ligand_atoms.get_atomic_numbers()), axis=None)
-    # Displace the ligand along a single axis by 10000 A, matching so3lr's
-    # prepare_dimer_xyz.py. This must exceed the calculator's lr_cutoff (default
-    # 1000 A) so that no short- or long-range term survives between the two.
     ligand_positions = ligand_atoms.get_positions() + np.array([10000.0, 0.0, 0.0])
     positions = np.concatenate((protein_atoms.get_positions(), ligand_positions), axis=0)
     complex_atoms = Atoms(symbols=atomic_numbers, positions=positions)
-    # This combined (but separated) system is evaluated in a single call, so its
-    # total charge must be the sum of the protein and ligand charges — otherwise
-    # the non-interacting reference would silently be computed as neutral.
     complex_atoms.info['charge'] = protein_charge + ligand_charge
-    # Tag it the way so3lr tags a separated dimer. `structure_type` is what
-    # mlff's file dataloader keys off; the calculator reads the same keys to build
-    # residue_charge/residue_segments, so each fragment's partial charges are
-    # renormalised to its own charge instead of to the shared total. Without this
-    # the net charge leaks between two fragments that are 10000 A apart.
+    # Each fragment's partial charges are renormalised to its own charge instead of to the shared total.
     if per_fragment_charges:
         complex_atoms.info['structure_type'] = 'dimer_translated'
         complex_atoms.info['charge_a'] = protein_charge

@@ -16,7 +16,7 @@ import numpy as np
 class MockSo3lrSfCalculator:
     def __init__(self, *args, **kwargs):
         self.output_per_atom_energy_components = kwargs.get('output_per_atom_energy_components', False)
-        self.lr_cutoff = kwargs.get('lr_cutoff', 12.0)
+        self.elec_lr_cutoff = kwargs.get('elec_lr_cutoff', 10.0)
         self.dtype = kwargs.get('dtype', np.float32)
         self.use_jax_md = kwargs.get('use_jax_md', False)  # Default to MLFF mode for tests
         self._calculator = Mock()
@@ -294,6 +294,24 @@ def alanine_files(test_data_dir):
 
     if not files:
         pytest.skip("No alanine files found in test_data")
+
+    return files
+
+
+@pytest.fixture
+def peptide_files(test_data_dir):
+    """Get the multi-residue peptide fixture used for trim gap-bridging/capping tests."""
+    if not test_data_dir.exists():
+        pytest.skip("test_data directory not found")
+
+    files = {}
+    for key, name in [('pdb', 'peptide.pdb'), ('ligand', 'peptide_lig.xyz')]:
+        path = test_data_dir / name
+        if path.exists():
+            files[key] = path
+
+    if len(files) != 2:
+        pytest.skip("peptide fixture files not found in test_data")
 
     return files
 
