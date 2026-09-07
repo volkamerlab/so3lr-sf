@@ -1,6 +1,6 @@
 [project]
 name = "so3lr-sf"
-version = "0.0.1"
+version = "0.1.0"
 description = "SO3krates Universal Pairwise Force Field with Long Range Interactions (SO3LR) as a scoring function for binding affinity calculations"
 authors = [{ name = "Hamza Ibrahim" }]
 license = "MIT"

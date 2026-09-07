@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo/logo.png" alt="SO3LR-SF logo" width="750">
+  <img src="logo/so3lrsf_overview.png" alt="SO3LR-SF so3lrsf_overview" width="750">
 </p>
 
 # **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
@@ -92,23 +92,24 @@ For containerized deployment, you can either pull the pre-built image or build f
 
 #### Option 1: Pull Pre-built Image
 ```bash
-# Pull the latest image
-docker pull hamzaibrahim21/so3lr-sf:latest
+# Pull the pinned image
+docker pull hamzaibrahim21/so3lr-sf:v0.1.0
 
 # Run container
-docker run --rm -it hamzaibrahim21/so3lr-sf:latest
+docker run --rm -it hamzaibrahim21/so3lr-sf:v0.1.0
 
 # For GPU support (requires NVIDIA Container Toolkit)
-docker run --gpus all --rm -it hamzaibrahim21/so3lr-sf:latest
+docker run --gpus all --rm -it hamzaibrahim21/so3lr-sf:v0.1.0
 ```
 
 #### Option 2: Build from Source
 ```bash
 # Build the Docker image
-docker build -f Docker/Dockerfile -t so3lr-sf:latest .
+docker build -f Docker/Dockerfile -t so3lr-sf:v0.1.0 .
 
-# Run tests in container
-docker run --rm so3lr-sf:latest pytest tests/ --verbose
+# Run the test suite (tests/ is not baked into the image; bind-mount the repo)
+docker run --rm -v "$PWD:/src" -w /src \
+  --entrypoint /app/.venv/bin/python so3lr-sf:v0.1.0 -m pytest tests/ --verbose
 ```
 
 </details>
@@ -160,7 +161,18 @@ results_steps_{#_steps}_fmax{FMAX}/
 
 
 <details>
-<summary><h2>📋 Command Line Arguments</h2></summary>
+<summary><h2>📋 Command Line Interface</h2></summary>
+
+### Simple example
+
+The core command takes a protein and one or more ligands and prints the
+protein-ligand interaction energy:
+
+```bash
+so3lrsf --protein protein.pdb --ligands ligand.sdf
+```
+Every other flag below is optional and layers extra steps (trimming,
+optimization, explainability) on top of this basic call.
 
 ### Required Arguments
 - `--protein`: Path to protein structure file

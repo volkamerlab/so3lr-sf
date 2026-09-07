@@ -34,8 +34,6 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.29 /uv /uvx /usr/local/bin/
 WORKDIR /app
 
 # 1) Resolve & install dependencies first for better layer caching.
-#    Only the manifest, lock file and readme (referenced by the project
-#    metadata) are needed here; the project itself is installed later.
 COPY pyproject.toml uv.lock README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-editable --python 3.12
@@ -53,6 +51,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Interactive shells start inside the project virtual environment.
 RUN echo 'source /app/.venv/bin/activate' >> /root/.bashrc
+
+RUN chmod 755 /root
 
 # Default command
 CMD ["/bin/bash"]
