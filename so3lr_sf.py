@@ -127,12 +127,6 @@ Examples:
         default=100,
         help="Maximum optimization steps (default: 100)"
     )
-    parser.add_argument(
-        "--optimization-mode",
-        choices=["no-strain", "strain", "strain-prot"],
-        default="no-strain",
-        help="Optimization strategy: 'no-strain' (energy from optimized complex only), 'strain' (add ligand strain energy), 'strain-prot' (add both ligand and protein strain energies). Default: no-strain"
-    )
 
     # Model parameters
     parser.add_argument(
@@ -269,11 +263,9 @@ def main():
         # Store optimization parameters in args for process_single_ligand
         if args.optimize is not None:
             args.opt_radius = args.optimize  # Use optimize value as radius
-            args.calculate_protein_strain = args.optimization_mode == "strain-prot"
-            logger.info(f"=== OPTIMIZATION MODE: {args.optimization_mode} (radius: {args.opt_radius}Å) ===")
+            logger.info(f"=== OPTIMIZATION (radius: {args.opt_radius}Å) ===")
         else:
             args.opt_radius = None
-            args.calculate_protein_strain = False
 
         # Optional: load ProLIF protein structure for explainability
         preloaded_protein_prolif = None

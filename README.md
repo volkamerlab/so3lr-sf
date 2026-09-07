@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo/so3lrsf_overview.png" alt="SO3LR-SF so3lrsf_overview" width="750">
+  <img src="logo/so3lrsf_overview.png" alt="SO3LR-SF overview" width="100%">
 </p>
 
 # **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
@@ -122,7 +122,7 @@ docker run --rm -v "$PWD:/src" -w /src \
 src/
 ├── calculator.py                      # SO3LR calculator implementation
 ├── interaction_energy.py              # Main energy calculation functions
-├── optimization.py                    # Structure optimization through constraint or free optimization
+├── optimization.py                    # Constrained structure optimization of the protein-ligand complex
 ├── constraint.py                      # Handle optimization constraints either by-atom or by-residue
 ├── trim.py                            # Trim protein around ligand: by-residue (PDB, with gap bridging + H-capping) or by-atom (XYZ)
 ├── explainability.py                  # Energy-based explainability analysis and visualization
@@ -149,10 +149,6 @@ results_steps_{#_steps}_fmax{FMAX}/
 ├── constrained_opt_components/             # Extracted optimized protein and ligand components
 │   ├── {protein_name}_ligand_001_constrained_opt.xyz
 │   └── ligand_001_constrained_opt.xyz
-├── free_opt_ligands/                       # Free ligands for strain calculation (strain modes)
-│   └── ligand_001_free_opt.xyz
-├── free_opt_protein/                       # Free protein for strain calculation (strain-prot mode)
-│   └── {protein_name}_free_opt.xyz
 ├── results_summary.json                    # Main results file
 └── optimization_log.json                   # Optimization details
 ```
@@ -197,10 +193,6 @@ warning is emitted — use PDB input for the full protocol.
 
 ### Optimization Parameters
 - `--optimize FLOAT`: Enable optimization with specified radius around ligand in Angstroms (default: 4.0 if no value provided)
-- `--optimization-mode {no-strain,strain,strain-prot}`: Strain energy calculation mode (default: no-strain)
-  - **no-strain**: Traditional constrained optimization without strain energy corrections
-  - **strain**: Add ligand strain energy (cost of ligand deformation from optimal free conformation)
-  - **strain-prot**: Add both ligand and protein strain energies for complete binding thermodynamics
 - `--optimizer {FIRE,FIRE2,LBFGS,BFGS,BFGSLineSearch,LBFGSLineSearch,GPMin,MDMin,ODE12r,GoodOldQuasiNewton,QuasiNewton}`: Optimization algorithm (default: FIRE)
 - `--fmax FLOAT`: Force convergence criterion in eV/Å (default: 0.05)
 - `--steps INT`: Maximum optimization steps (default: 100)
@@ -236,9 +228,9 @@ so3lrsf --protein protein.pdb --ligands ligand.sdf
 # With structure optimization
 so3lrsf --protein protein.pdb --ligands ligand.sdf --optimize 4.0
 
-# With constrained optimization + ligand-strain energy and 2D explainable ligand energies
+# With trimming, constrained optimization and 2D explainable ligand energies
 so3lrsf --protein protein.pdb --ligands ligands.sdf \
-  --trim 10.0 --optimize 4.0 --optimization-mode strain --exp-lig --verbose
+  --trim 10.0 --optimize 4.0 --exp-lig --verbose
 ```
 
 ### Python API
@@ -294,40 +286,25 @@ so3lrsf \
     --protein protein.pdb \
     --ligands ligands.sdf \
     --optimize 4.0 \
-    --optimization-mode no-strain \
     --optimizer FIRE \
     --fmax 0.05 \
     --steps 100 \
     --verbose
 ```
 
-### Example 4: Constrained Optimization + ligand-strain energy + protein-strain energy
-```bash
-so3lrsf \
-    --protein protein.pdb \
-    --ligands ligands.sdf \
-    --optimize 4.0 \
-    --optimization-mode strain-prot \
-    --optimizer FIRE \
-    --fmax 0.05 \
-    --steps 100 \
-    --verbose
-```
-
-### Example 5: Full Analysis Pipeline
+### Example 4: Full Analysis Pipeline
 ```bash
 so3lrsf \
     --protein protein.pdb \
     --ligands multi_ligands.sdf \
     --trim 8.0 \
     --optimize 4.0 \
-    --optimization-mode strain \
     --exp-lig \
     --opt-log \
     --verbose
 ```
 
-### Example 6: Protein-Ligand Interaction Analysis
+### Example 5: Protein-Ligand Interaction Analysis
 ```bash
 so3lrsf \
     --protein protein.pdb \
@@ -336,7 +313,7 @@ so3lrsf \
     --verbose
 ```
 
-### Example 7: With Explicit Charge Parameters
+### Example 6: With Explicit Charge Parameters
 ```bash
 so3lrsf \
     --protein protein.pdb \
@@ -348,7 +325,7 @@ so3lrsf \
     --verbose
 ```
 
-### Example 8: Debug Mode for Troubleshooting
+### Example 7: Debug Mode for Troubleshooting
 ```bash
 so3lrsf \
     --protein protein.pdb \
@@ -371,10 +348,7 @@ so3lrsf \
     "trim": null,
     "trim_radius": null,
     "optimize": 3.0,
-    "optimization_mode": "strain-prot",
     "opt_radius": 3.0,
-    "ligand_strain_calculation": true,
-    "protein_strain_calculation": true,
     "ligand explain 2D": false,
     "PL interactions explain 2D": false,
     "PL interactions explain 3D": false,
@@ -391,11 +365,8 @@ so3lrsf \
     {
       "ligand_name": "ligand",
       "ligand_file": "path/to/ligand.xyz",
-      "interaction_energy": -2.6674346923828125,
-      "base_interaction_energy": -2.7811279296875,
-      "ligand_strain_energy": 0.0687103271484375,
-      "protein_strain_energy": 0.04498291015625,
-      "binding_energy_kcal_mol": -61.51104400634765,
+      "interaction_energy": -2.7811279296875,
+      "binding_energy_kcal_mol": -64.13281005859375,
       "ligand_explainability": {
         "protein_energy_components": {
           "electrostatic_energy": -13.823354721069336,

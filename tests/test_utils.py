@@ -641,7 +641,6 @@ class TestSaveResults:
         mock_args.optimizer = "FIRE"
         mock_args.fmax = 0.01
         mock_args.steps = 1000
-        mock_args.optimization_mode = "no-strain"
         mock_args.opt_radius = None
 
         mock_logger = Mock()

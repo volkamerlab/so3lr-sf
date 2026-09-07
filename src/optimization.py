@@ -10,12 +10,11 @@ from pathlib import Path
 from typing import Union, Tuple, Optional, Dict, Any, List
 from ase import Atoms
 import ase.optimize
-from ase.constraints import FixAtoms
 
 from .utils import write_structure, write_opt_structure
 from .molecule_loader import load_ase_structure
 from .calculator import So3lrSfCalculator
-from .interaction_energy import protein_ligand_interaction, calculate_strain_energies
+from .interaction_energy import protein_ligand_interaction
 from .constraint import create_optimization_constraint
 import logging
 
@@ -116,7 +115,7 @@ def optimize_structure(
 
     The function always saves the final structure regardless of convergence status,
     ensuring reproducible workflows. Constraint information is tracked and returned
-    for use in subsequent strain energy calculations.
+    for use in subsequent steps.
 
     Optimization Process:
         1. Apply constraints if opt_radius is specified
@@ -165,7 +164,7 @@ def optimize_structure(
                     - 'constraint_applied': Boolean if constraints were used
                     - 'optimization_radius': Radius used for constraints
                     - 'flexible_protein_atoms': Number of moveable protein atoms
-                    - 'constraint': ASE constraint object for strain calculations
+                    - 'constraint': ASE constraint object
 
     Raises:
         ValueError: If optimizer is not recognized or calculator is None
@@ -297,29 +296,22 @@ def optimize_structure(
 def constrained_optimization(ligand_file: str, ligand_name: str, working_protein_path: str,
                                   output_dir: Path, calc, args, optimization_log: Optional[List], logger):
     """
-    Perform constrained optimization of protein-ligand complex for strain calculations.
+    Perform constrained optimization of a protein-ligand complex.
 
-    This function implements the default optimization workflow used in both 'no-strain'
-    and strain-based optimization modes. It builds a protein-ligand complex from
-    separate structures, optimizes the complex with radius-based constraints, and
-    extracts optimized components for energy calculations.
-
-    When strain modes are requested ('strain' or 'strain-prot'), this function also
-    triggers free optimization of individual components to calculate strain energies
-    that are added to the base interaction energy.
+    This function implements the optimization workflow. It builds a protein-ligand
+    complex from separate structures, optimizes the complex with radius-based
+    constraints, and extracts the optimized components for energy calculations.
 
     Workflow:
         1. Load and combine protein + ligand structures into complex
         2. Apply constrained optimization (only binding pocket atoms move)
         3. Extract optimized protein and ligand from optimized complex
         4. Save separated components for interaction energy calculation
-        5. If strain mode: perform additional free optimizations
-        6. Return paths to all optimized structures
+        5. Return paths to the optimized structures
 
     Constraint Details:
         - Ligand atoms: Always flexible during optimization
         - Protein atoms: Only those within opt_radius of ligand can move
-        - Constraint information preserved for consistent strain calculations
 
     Args:
         ligand_file (str): Path to input ligand structure file
@@ -328,51 +320,40 @@ def constrained_optimization(ligand_file: str, ligand_name: str, working_protein
         output_dir (Path): Base directory for saving optimization outputs
         calc (So3lrSfCalculator): SO3LR-SF calculator for energy/force computation
         args: Argument object containing optimization parameters:
-            - optimization_mode (str): 'no-strain', 'strain', or 'strain-prot'
             - opt_radius (float): Constraint radius in Angstroms
             - optimizer (str): ASE optimizer algorithm name
             - fmax (float): Force convergence criterion
             - steps (int): Maximum optimization steps
             - opt_log (bool): Whether to log optimization details
-            - calculate_protein_strain (bool): Include protein strain calculation
         optimization_log (Optional[List]): List to store optimization metadata
         logger: Python logger for progress reporting
 
     Returns:
-        Tuple[str, str, str, Optional[str], Optional[str]]:
+        Tuple[str, str, str]:
             - opt_protein_path: Path to optimized protein component
             - opt_ligand_path: Path to optimized ligand component
             - optimized_complex_path: Path to optimized complex
-            - optimized_free_ligand_path: Path to free ligand (strain modes only)
-            - optimized_free_protein_path: Path to free protein (strain modes only)
 
     File Organization:
         output_dir/
         ├── constrained_opt_complexes/
         │   └── {ligand_name}_complex_constrained_opt.xyz
-        ├── constrained_opt_components/
-        │   ├── {protein_stem}_{ligand_name}_constrained_opt.xyz
-        │   └── {ligand_name}_constrained_opt.xyz
-        ├── free_opt_ligands/  (strain modes only)
-        │   └── {ligand_name}_free_opt.xyz
-        └── free_opt_protein/  (strain-prot mode only)
-            └── {protein_stem}_free_opt.xyz
+        └── constrained_opt_components/
+            ├── {protein_stem}_{ligand_name}_constrained_opt.xyz
+            └── {ligand_name}_constrained_opt.xyz
 
     Notes:
-        - Always performs constrained optimization as the base calculation
-        - Strain energies are additional corrections added to base interaction energy
-        - Constraint objects are preserved and passed to strain optimization
         - Function logs detailed progress and optimization statistics
         - Components are extracted from complex to ensure consistency
 
     Example:
         >>> output_dir = Path("optimization_results")
-        >>> prot_path, lig_path, complex_path, free_lig, free_prot = constrained_optimization(
+        >>> prot_path, lig_path, complex_path = constrained_optimization(
         ...     "ligand.sdf", "aspirin", "protein.pdb", output_dir, calc, args, [], logger
         ... )
         >>> # Use returned paths for interaction energy calculation
     """
-    logger.info(f"=== OPTIMIZATION MODE: {args.optimization_mode.upper()} (radius: {args.opt_radius} Å) ===")
+    logger.info(f"=== CONSTRAINED OPTIMIZATION (radius: {args.opt_radius} Å) ===")
 
     # Build complex from original structures
     protein_atoms = load_ase_structure(working_protein_path)[0]
@@ -422,161 +403,9 @@ def constrained_optimization(ligand_file: str, ligand_name: str, working_protein
 
     logger.debug(f"Complex components extracted and saved (protein: {opt_protein_path}, ligand: {opt_ligand_path}, complex: {optimized_complex_path})")
 
-    optimized_free_ligand_path = None
-    optimized_free_protein_path = None
-
-    if args.optimization_mode in ['strain', 'strain-prot']:
-        logger.info(f"Computing strain energies ({args.optimization_mode})...")
-
-        # Get flexible protein atom indices from complex optimization info
-        constraint = None
-        constraint_info = complex_opt_info.get('constraint_info', {})
-
-        if constraint_info and 'constraint' in constraint_info:
-            constraint = constraint_info.get('constraint')
-        else:
-            logger.warning("No constraint information available for strain calculation, proceeding without constraints.")
-
-        optimized_free_ligand_path, optimized_free_protein_path = strain_optimization(
-            ligand_file, ligand_name, working_protein_path, output_dir, calc, args, optimization_log, logger,
-            constraint=constraint
-        )
-    logger.info(f"Strain optimization complete - ready for energy calculations")
     logger.debug(f"=== CONSTRAINED OPTIMIZATION COMPLETED ===")
-    if optimized_free_ligand_path:
-        logger.debug(f"  Free ligand: {optimized_free_ligand_path}")
-    if optimized_free_protein_path:
-        logger.debug(f"  Free protein: {optimized_free_protein_path}")
 
-    return str(opt_protein_path), str(opt_ligand_path), optimized_complex_path, optimized_free_ligand_path, optimized_free_protein_path
-
-
-def strain_optimization(ligand_file: str, ligand_name: str, working_protein_path: str,
-                       output_dir: Path, calc, args, optimization_log: Optional[List], logger, constraint: Optional[set[FixAtoms]]):
-    """
-    Perform free optimization of individual components for strain energy calculation.
-
-    This function is called by constrained_optimization() when strain modes are requested
-    ('strain' or 'strain-prot'). It optimizes ligand and protein structures in their
-    free (unbound) conformations to calculate strain energies - the energetic cost of
-    deforming molecules from their optimal free conformations to bound conformations.
-
-    Strain Energy Concept:
-        - Ligand strain = E_ligand_in_complex - E_ligand_free_optimized
-        - Protein strain = E_protein_in_complex - E_protein_free_optimized (with constraints)
-        - Total binding energy = Interaction energy + Ligand strain + Protein strain
-
-    Optimization Strategy:
-        1. Ligand: Unconstrained optimization (represents free solution state)
-        2. Protein: Constrained optimization using same constraints as complex
-           (represents protein with same binding site flexibility)
-
-    Args:
-        ligand_file (str): Path to original ligand structure file
-        ligand_name (str): Ligand identifier for output file naming
-        working_protein_path (str): Path to original protein structure file
-        output_dir (Path): Base directory for optimization outputs
-        calc (So3lrSfCalculator): SO3LR-SF calculator for energy/force computation
-        args: Arguments object containing:
-            - optimization_mode (str): 'strain' (ligand only) or 'strain-prot' (both)
-            - optimizer (str): ASE optimizer algorithm
-            - fmax (float): Force convergence criterion
-            - steps (int): Maximum optimization steps
-            - opt_log (bool): Enable optimization logging
-            - calculate_protein_strain (bool): Whether to optimize protein
-        optimization_log (Optional[List]): List for storing optimization metadata
-        logger: Python logger for progress reporting
-        constraint (Optional[set[int]]): ASE constraint object from complex optimization
-                                        to apply consistent constraints to protein
-
-    Returns:
-        Tuple[str, Optional[str]]:
-            - optimized_free_ligand_path: Path to free-optimized ligand structure
-            - optimized_free_protein_path: Path to free-optimized protein (if requested)
-
-    File Outputs:
-        - free_opt_ligands/{ligand_name}_free_opt.xyz: Free ligand structure
-        - free_opt_protein/{protein_stem}_free_opt.xyz: Free protein structure (optional)
-
-    Notes:
-        - Ligand optimization is always performed (required for any strain calculation)
-        - Protein optimization only when calculate_protein_strain=True
-        - Protein uses same constraints as complex to maintain binding site flexibility
-        - Results enable strain energy calculation in calculate_strain_energies()
-        - Function is designed to be called after constrained_optimization()
-
-    Example:
-        >>> # Called from constrained_optimization() for strain modes
-        >>> constraint = complex_opt_info['constraint_info']['constraint']
-        >>> free_lig_path, free_prot_path = strain_optimization(
-        ...     "ligand.sdf", "aspirin", "protein.pdb", output_dir, calc,
-        ...     args, optimization_log, logger, constraint
-        ... )
-    """
-    logger.info(f"=== STRAIN OPTIMIZATION ({args.optimization_mode}) ===")
-
-    # Step 1: Optimize ligand alone (required for strain calculation)
-    logger.debug(f"Optimizing free ligand for strain calculation: {ligand_name}")
-    ligand_atoms = load_ase_structure(ligand_file)[0]
-    free_ligand_path = output_dir / "free_opt_ligands" / f"{ligand_name}_free_opt.xyz"
-    free_ligand_path.parent.mkdir(parents=True, exist_ok=True)
-
-    optimized_free_ligand_path, ligand_opt_info = optimize_structure(
-        ligand_atoms, calc,
-        optimizer=args.optimizer, fmax=args.fmax, steps=args.steps, opt_radius=None,
-        output_path=free_ligand_path
-    )
-
-    if args.opt_log and optimization_log is not None:
-        optimization_log.append({
-            'ligand_strain_info': ligand_opt_info
-        })
-    logger.info(f"Free ligand optimization completed: {optimized_free_ligand_path}")
-
-
-    # Step 2: Optimize protein alone (if protein strain requested)
-    optimized_free_protein_path = None
-    if hasattr(args, 'calculate_protein_strain') and args.calculate_protein_strain:
-        logger.debug(f"Optimizing free protein with same constraints for strain calculation ...")
-        protein_stem = Path(working_protein_path).stem
-        free_protein_path = output_dir / "free_opt_protein" / f"{protein_stem}_free_opt.xyz"
-
-        if free_protein_path.exists():
-            logger.debug(f"Using existing free optimized protein: {free_protein_path}")
-            optimized_free_protein_path = str(free_protein_path)
-        else:
-            logger.debug(f"Loading and optimizing protein structure: {protein_stem}")
-            free_protein_path.parent.mkdir(parents=True, exist_ok=True)
-            protein_atoms = load_ase_structure(working_protein_path)[0]
-            logger.debug(f"Protein loaded: {len(protein_atoms)} atoms")
-
-            if constraint is not None:
-                logger.debug(f"Applying same constraints as complex optimization to protein")
-                protein_atoms.set_constraint(constraint)
-            else:
-                logger.warning("No constraint available for protein strain optimization")
-
-            optimized_free_protein_path, protein_opt_info = optimize_structure(
-                protein_atoms, calc,
-                optimizer=args.optimizer, fmax=args.fmax, steps=args.steps,
-                output_path=free_protein_path
-            )
-
-            if args.opt_log and optimization_log is not None:
-                optimization_log.append({
-                    'structure_type': 'protein_free_for_strain',
-                    'structure_name': protein_stem,
-                    'optimization_info': protein_opt_info
-                })
-            logger.info(f"Free protein optimization completed: {optimized_free_protein_path}")
-    else:
-        logger.debug("Protein strain calculation not requested, skipping protein optimization")
-
-    logger.info(f"Strain optimization completed - free structures optimized")
-    logger.debug(f"Free ligand: {optimized_free_ligand_path}")
-    logger.debug(f"Free protein: {optimized_free_protein_path}")
-
-    return optimized_free_ligand_path, optimized_free_protein_path
+    return str(opt_protein_path), str(opt_ligand_path), optimized_complex_path
 
 
 def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None, charges=(0, 0, 0)):
@@ -585,35 +414,23 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
 
     This is the main entry point for ligand processing that orchestrates the entire
     computational workflow including optimization, interaction energy calculation,
-    strain energy analysis, and explainability features. The function handles both
-    traditional interaction energy calculations and advanced strain-based analysis.
+    and explainability features.
 
     Workflow Overview:
         1. Structure optimization (if requested via args.optimize)
            - Constrained optimization of protein-ligand complex
-           - Optional free optimization for strain energy calculation
         2. Protein-ligand interaction energy calculation
-        3. Strain energy calculation and integration (strain modes only)
-        4. Explainability analysis (if requested)
-        5. Energy decomposition analysis (if requested)
+        3. Explainability analysis (if requested)
+        4. Energy decomposition analysis (if requested)
 
-    Optimization Modes:
+    Optimization:
         - No optimization: Use original structures directly
-        - 'no-strain': Constrained optimization only (traditional approach)
-        - 'strain': Add ligand strain energy to interaction energy
-        - 'strain-prot': Add both ligand and protein strain energies
-
-    Energy Components:
-        - Base interaction energy: E_complex - E_protein - E_ligand (optimized)
-        - Ligand strain: E_ligand_in_complex - E_ligand_free
-        - Protein strain: E_protein_in_complex - E_protein_free
-        - Final energy: Base + strain corrections
+        - With --optimize: constrained optimization of the protein-ligand complex
 
     Args:
         ligand_file (str): Path to ligand structure file (SDF, MOL2, XYZ, etc.)
         args: Arguments object containing workflow parameters:
             - optimize (bool): Whether to perform structural optimization
-            - optimization_mode (str): 'no-strain', 'strain', or 'strain-prot'
             - opt_radius (float): Constraint radius for optimization
             - optimizer, fmax, steps: Optimization parameters
             - exp_lig (bool): Generate ligand explainability heatmap
@@ -621,7 +438,6 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
             - exp_3d (bool): Generate 3D PyMOL visualization script
             - eda (bool): Perform energy decomposition analysis
             - opt_log (bool): Log detailed optimization information
-            - calculate_protein_strain (bool): Include protein strain calculation
             - verbose (bool): Enable verbose output
         calc (So3lrSfCalculator): SO3LR-SF calculator for energy/force computation
         working_protein_path (str): Path to protein structure file
@@ -636,11 +452,8 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
             - result_dict: Dictionary containing:
                 - 'ligand_name': Ligand identifier
                 - 'ligand_file': Path to original ligand file
-                - 'interaction_energy': Final interaction energy (eV)
-                - 'base_interaction_energy': Base interaction energy before strain
-                - 'ligand_strain_energy': Ligand strain correction (eV)
-                - 'protein_strain_energy': Protein strain correction (eV)
-                - 'binding_energy_kcal_mol': Final energy in kcal/mol
+                - 'interaction_energy': Interaction energy (eV)
+                - 'binding_energy_kcal_mol': Interaction energy in kcal/mol
                 - 'ligand_explainability': Analysis results and components
             - error_message: None if successful, error string if failed
 
@@ -649,8 +462,6 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
             - constrained_opt_complexes/{ligand}_complex_constrained_opt.xyz
             - constrained_opt_components/{protein}_{ligand}_constrained_opt.xyz
             - constrained_opt_components/{ligand}_constrained_opt.xyz
-            - free_opt_ligands/{ligand}_free_opt.xyz (strain modes)
-            - free_opt_protein/{protein}_free_opt.xyz (strain-prot mode)
 
         Explainability outputs (if requested):
             - ligand_exp/{ligand}_heatmap.png (per-atom contribution heatmap)
@@ -669,16 +480,12 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
         ... )
         >>> print(f"Interaction energy: {result['interaction_energy']:.3f} eV")
 
-        >>> # With strain analysis and explainability
-        >>> args.optimization_mode = 'strain'
+        >>> # With explainability
         >>> args.exp_lig = True
         >>> args.eda = True
         >>> result, error = process_single_ligand(
         ...     "ligand.sdf", args, calc, "protein.pdb", output_dir, [], logger
         ... )
-        >>> print(f"Base energy: {result['base_interaction_energy']:.3f} eV")
-        >>> print(f"Ligand strain: {result['ligand_strain_energy']:.3f} eV")
-        >>> print(f"Final energy: {result['interaction_energy']:.3f} eV")
     """
 
     ligand_path = Path(ligand_file)
@@ -690,15 +497,13 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
     try:
         # Check if optimization is requested
         if args.optimize:
-            working_protein_path, working_ligand_path, working_complex_path, free_ligand_path, free_protein_path = constrained_optimization(
+            working_protein_path, working_ligand_path, working_complex_path = constrained_optimization(
                 ligand_file, ligand_name, working_protein_path, output_dir, calc, args, optimization_log, logger
             )
         else:
             # No optimization - use original structures
             working_ligand_path = ligand_file
             working_complex_path = None
-            free_ligand_path = None
-            free_protein_path = None
 
         # Calculate interaction energy
         logger.info(f"Calculating interaction energy for: {ligand_name}")
@@ -727,44 +532,11 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
             interaction_energy = result_from_calc
             analysis = {}
 
-        # Calculate strain energies if in strain mode and optimization was performed
-        final_interaction_energy = interaction_energy
-        ligand_strain = 0.0
-        protein_strain = 0.0
-        strain_energies = {}
-
-        if args.optimize and hasattr(args, 'optimization_mode') and args.optimization_mode in ['strain', 'strain-prot']:
-            # Only calculate strain energies if we have the required free structure paths
-            if free_ligand_path is not None:
-                strain_energies = calculate_strain_energies(
-                    working_ligand_path, working_protein_path,
-                    free_ligand_path, free_protein_path,
-                    calc, calculate_protein_strain=getattr(args, 'calculate_protein_strain', False),
-                    logger=logger
-                )
-
-                # Add strain energies to the final interaction energy
-                ligand_strain = strain_energies.get('ligand_strain', 0.0)
-                protein_strain = strain_energies.get('protein_strain', 0.0)
-
-                final_interaction_energy = interaction_energy + ligand_strain + protein_strain
-
-                logger.info(f"  Base interaction energy: {interaction_energy:.6f} eV")
-                if ligand_strain != 0.0:
-                    logger.info(f"  Ligand strain energy: {ligand_strain:.6f} eV ({ligand_strain * 23.06:.2f} kcal/mol)")
-                if protein_strain != 0.0:
-                    logger.info(f"  Protein strain energy: {protein_strain:.6f} eV ({protein_strain * 23.06:.2f} kcal/mol)")
-                logger.info(f"  Final interaction energy (including strain): {final_interaction_energy:.6f} eV "
-                           f"({final_interaction_energy * 23.06:.2f} kcal/mol)")
-
         result = {
             'ligand_name': ligand_name,
             'ligand_file': ligand_file,
-            'interaction_energy': final_interaction_energy,
-            'base_interaction_energy': interaction_energy,
-            'ligand_strain_energy': ligand_strain,
-            'protein_strain_energy': protein_strain,
-            'binding_energy_kcal_mol': final_interaction_energy * 23.06,
+            'interaction_energy': interaction_energy,
+            'binding_energy_kcal_mol': interaction_energy * 23.06,
             'ligand_explainability': analysis
         }
 
