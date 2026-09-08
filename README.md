@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/volkamerlab/so3lr-sf/graph/badge.svg?token=A0X4RNCKBI)](https://codecov.io/gh/volkamerlab/so3lr-sf)
 [![CI](https://github.com/volkamerlab/so3lr-sf/workflows/CI/badge.svg)](https://github.com/volkamerlab/so3lr-sf/actions)
+[![Preprint](https://img.shields.io/badge/preprint-ChemRxiv-critical.svg)](https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1)
 
 SO3LR-SF is a comprehensive Python package for calculating protein-ligand interaction energies using SO3LR machine learning force fields. It provides advanced features including structure optimization, explainability analysis, and molecular visualization.
 
@@ -423,4 +424,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📚 Citation
 
+If you use SO3LR-SF in your work, please cite the preprint:
+
+> Hamza Agha, Sergio Suárez-Dou, Adil Kabylda, Alexandre Tkatchenko, Andrea Volkamer.
+> *Explainable ML force-field for evaluating protein–ligand binding energy using SO3LR*.
+> ChemRxiv (2026). https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1
+
+```bibtex
+@article{so3lrsf2026agha,
+  author  = {Hamza Agha and Sergio Su{\'a}rez-Dou and Adil Kabylda and Alexandre Tkatchenko and Andrea Volkamer},
+  title   = {Explainable ML force-field for evaluating protein--ligand binding energy using SO3LR},
+  journal = {ChemRxiv},
+  year    = {2026},
+  doi     = {10.26434/chemrxiv.15008482/v1},
+  url     = {https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1},
+  note    = {Preprint}
+}
+```
 
