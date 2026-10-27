@@ -719,7 +719,8 @@ class TestProcessSingleLigand:
                 verbose=False,
                 preloaded_protein_prolif=None,
                 exp_outputs=expected_exp_outputs,
-                charges=(0, 0, 0)
+                charges=(0, 0, 0),
+                protein_energy_cache=None,
             )
 
     @pytest.mark.unit
@@ -741,7 +742,7 @@ class TestProcessSingleLigand:
         with patch('src.optimization.protein_ligand_interaction') as mock_interaction:
             # Mock EDA return
             mock_analysis = {
-                'interaction_energy_components': {'mlff': -1.2, 'zbl': 0.3, 'electrostatic': -0.9}
+                'interaction_energy_components': {'mlff': -1.2, 'repulsion': 0.3, 'electrostatic': -0.9}
             }
             mock_interaction.return_value = (-1.8, mock_analysis)
 

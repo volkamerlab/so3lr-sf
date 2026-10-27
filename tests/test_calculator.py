@@ -2,6 +2,8 @@
 Tests for the calculator module.
 """
 
+from pathlib import Path
+
 import pytest
 import numpy as np
 from src.molecule_loader import load_ase_structure
@@ -68,7 +70,7 @@ class TestSo3lrSfCalculator:
 
         # Mock returns predefined components
         assert isinstance(components, dict)
-        expected_keys = {'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'}
+        expected_keys = {'nn_energy', 'repulsion', 'electrostatic_energy', 'dispersion_energy'}
         assert set(components.keys()) == expected_keys
 
     @pytest.mark.unit
@@ -172,7 +174,7 @@ class TestSo3lrSfCalculator:
             assert len(components) > 0
 
             # Assert the specific component keys that SO3LR returns
-            expected_keys = {'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'}
+            expected_keys = {'nn_energy', 'repulsion', 'electrostatic_energy', 'dispersion_energy'}
             actual_keys = set(components.keys())
             assert actual_keys == expected_keys, f"Expected {expected_keys}, but got {actual_keys}"
 
@@ -186,6 +188,37 @@ class TestSo3lrSfCalculator:
 
         except Exception as e:
             pytest.fail(f"SO3LR calculation failed: {e}")
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_calculator_per_atom_components_new_model(self):
+        """Per-atom EDA components for a released so3lr-{s,m,l} checkpoint.
+
+        The newer checkpoints use the non-legacy architecture (RMSNorm / NLH
+        repulsion / dedicated C6 head); this checks the decomposition is still
+        complete - the four components must reconstruct the total energy.
+        """
+        model_dir = Path("models/so3lr-m-2606")
+        if not model_dir.is_dir():
+            pytest.skip(f"{model_dir} not present (checkpoint weights are untracked)")
+
+        calc = So3lrSfCalculator(
+            model=str(model_dir),
+            output_per_atom_energy_components=True,
+        )
+        atoms = load_ase_structure("tests/test_data/alanine.xyz")[0]
+        energy = calc.calculate_energy(atoms)
+        components = calc.get_per_atom_energy_components()
+
+        expected_keys = {'nn_energy', 'repulsion', 'electrostatic_energy', 'dispersion_energy'}
+        assert set(components.keys()) == expected_keys
+
+        for values in components.values():
+            assert isinstance(values, np.ndarray)
+            assert values.shape == (len(atoms),)
+
+        total_from_components = sum(float(v.sum()) for v in components.values())
+        assert total_from_components == pytest.approx(energy, abs=1e-3)
 
     @pytest.mark.unit
     def test_calculator_properties(self, mock_calculator):

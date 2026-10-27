@@ -408,7 +408,8 @@ def constrained_optimization(ligand_file: str, ligand_name: str, working_protein
     return str(opt_protein_path), str(opt_ligand_path), optimized_complex_path
 
 
-def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None, charges=(0, 0, 0)):
+def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None, charges=(0, 0, 0),
+                          protein_energy_cache: Optional[Dict] = None):
     """
     Complete workflow for processing a single ligand with protein-ligand interaction analysis.
 
@@ -446,6 +447,8 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
         logger: Python logger for progress reporting
         preloaded_protein_prolif (Optional): Pre-loaded protein for explainability
                                             analysis (performance optimization)
+        protein_energy_cache (Optional[Dict]): Dict shared across a ligand series to
+                                            reuse the protein-alone energy; None disables it
 
     Returns:
         Tuple[Dict[str, Any], Optional[str]]:
@@ -522,7 +525,8 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
             verbose=getattr(args, 'verbose', False),
             preloaded_protein_prolif=preloaded_protein_prolif,
             exp_outputs=exp_outputs,
-            charges=charges
+            charges=charges,
+            protein_energy_cache=protein_energy_cache,
         )
 
         # Handle results

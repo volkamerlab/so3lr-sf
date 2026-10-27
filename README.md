@@ -87,6 +87,24 @@ uv run pytest
 uv run so3lrsf --protein tests/test_data/alanine.xyz --ligands tests/test_data/water.sdf
 ```
 
+### SO3LR Tauri models
+
+This version adds support for the SO3LR Tauri models (`so3lr-s-2602`, `so3lr-m-2602`,
+`so3lr-l-2602`, `so3lr-s-2606`, `so3lr-m-2606`, `so3lr-l-2606`) alongside the original
+SO3LR model. Select one with `--model PATH/TO/MODEL`, a path to the model's checkpoint
+directory (holding `hyperparameters.json` plus `params.pkl` or `checkpoints/`); finetuned
+checkpoints in the same layout work too. Without `--model`, `so3lrsf` uses the SO3LR
+weights bundled with the pinned `so3lr` package.
+
+The checkpoints live under `models/<name>/` (~26 MB in total) and are kept out of git,
+so place your copy there before running:
+
+```bash
+uv run so3lrsf --protein protein.pdb --ligands ligand.sdf --model PATH/TO/MODEL
+```
+
+See `benchmarks/README.md` for how `--model` is used across the benchmark suite.
+
 ### Docker Installation
 
 For containerized deployment, you can either pull the pre-built image or build from source:
@@ -202,6 +220,8 @@ warning is emitted — use PDB input for the full protocol.
 - `--elec-lr-cutoff FLOAT`: Long-range cutoff (Angstroms) for the electrostatic term (default: 10.0).
   Dispersion and the long-range neighbour list are pinned to 1000 Å. Recommended: **10** for
   ranking / relative potency, **1000** for absolute interaction energies compared to DFT.
+- `--model PATH/TO/MODEL`: SO3LR Tauri model / checkpoint directory to use instead of the bundled SO3LR weights
+  (see "SO3LR Tauri models" above).
 - `--dp`: Enable double precision (float64) for JAX-MD powered calculations
 
 ### Charge Parameters
@@ -371,25 +391,25 @@ so3lrsf \
       "ligand_explainability": {
         "protein_energy_components": {
           "electrostatic_energy": -13.823354721069336,
-          "zbl_repulsion": 36.19248580932617,
+          "repulsion": 36.19248580932617,
           "dispersion_energy": -6.992919445037842,
           "nn_energy": -679.03564453125
         },
         "ligand_energy_components": {
           "electrostatic_energy": -1.2963955402374268,
-          "zbl_repulsion": 2.4064440727233887,
+          "repulsion": 2.4064440727233887,
           "dispersion_energy": -0.5644962787628174,
           "nn_energy": -60.04219436645508
         },
         "complex_energy_components": {
           "electrostatic_energy": -14.730865478515625,
-          "zbl_repulsion": 38.59886932373047,
+          "repulsion": 38.59886932373047,
           "dispersion_energy": -9.317378997802734,
           "nn_energy": -740.4879150390625
         },
         "interaction_energy_components": {
           "electrostatic_energy": 0.3888847827911377,
-          "zbl_repulsion": -6.0558319091796875e-05,
+          "repulsion": -6.0558319091796875e-05,
           "dispersion_energy": -1.7599632740020752,
           "nn_energy": -1.4100761413574219
         }

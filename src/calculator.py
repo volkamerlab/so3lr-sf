@@ -42,6 +42,7 @@ class So3lrSfCalculator:
 
     Attributes:
         elec_lr_cutoff (float): Electrostatic long-range cutoff distance
+        model (Optional[str]): Checkpoint directory, or None for the bundled SO3LR weights
         dtype (type): Numerical precision for calculations
         dp (bool): Double precision flag
         output_per_atom_energy_components (bool): Whether per-atom components are enabled
@@ -53,13 +54,11 @@ class So3lrSfCalculator:
         dtype: type = np.float32,
         output_per_atom_energy_components: bool = False,
         dp: bool = False,
-        elec_lr_cutoff: float = 10.0
+        elec_lr_cutoff: float = 10.0,
+        model: Optional[str] = None,
     ):
         """
         Initialize the SO3LR-SF energy calculator.
-
-        The SO3LR model parameters are always loaded from the bundled `so3lr`
-        package, so no model path is required.
 
         Args:
             dispersion_energy_lr_cutoff_damping: Dispersion energy cutoff damping factor (default: 2.0)
@@ -70,33 +69,31 @@ class So3lrSfCalculator:
                 (default: 10.0). Dispersion and the long-range neighbour list stay pinned at
                 DISPERSION_LR_CUTOFF (1000 A). Recommended: 10 for ranking / relative potency,
                 1000 for absolute interaction energies compared to DFT.
+            model: Path to a checkpoint directory for a specific SO3LR release or finetuned
+                checkpoint. None (default) uses the bundled SO3LR weights.
 
         Example:
-            >>> # Basic calculator (electrostatics cut at 10 A, dispersion at 1000 A)
+            >>> # Basic calculator (bundled SO3LR, electrostatics screening at 10 A, dispersion at 1000 A)
             >>> calc = So3lrSfCalculator()
             >>>
             >>> # Calculator with EDA
             >>> calc = So3lrSfCalculator(output_per_atom_energy_components=True)
             >>>
-            >>> # Electrostatics cut at 10 A, dispersion still at 1000 A
-            >>> calc = So3lrSfCalculator(elec_lr_cutoff=10.0)
+            >>> # A specific / finetuned checkpoint
+            >>> calc = So3lrSfCalculator(model="PATH/TO/MODEL")
         """
-        # Handle double precision flag
-        if dp:
-            self.dtype = np.float64
-            # Enable JAX double precision if JAX is available
-            if _jax_available:
-                jax.config.update("jax_enable_x64", True)
-        else:
-            self.dtype = dtype
-            # Disable JAX double precision if explicitly not requested and JAX is available
-            if _jax_available and dtype != np.float64:
-                jax.config.update("jax_enable_x64", False)
+        self.dtype = np.float64 if dp else dtype
+        if _jax_available:
+            jax.config.update("jax_enable_x64", True)
+            # jax.config.update("jax_default_matmul_precision", "highest")
 
         self.dispersion_energy_lr_cutoff_damping = dispersion_energy_lr_cutoff_damping
         self.elec_lr_cutoff = elec_lr_cutoff
         self.dp = dp
         self.output_per_atom_energy_components = output_per_atom_energy_components
+        self.model = model
+        self._model_kw = {} if model is None else {'model': model}
+        self.supports_fragment_eda = True
 
         # Initialize calculator (always try JAX-MD first, fallback to MLFF)
         self._calculator = None
@@ -117,7 +114,7 @@ class So3lrSfCalculator:
         try:
             logger.debug("Initializing SO3LR calculator (ASE So3lrCalculator fallback)")
             logger.debug(f"Calculator parameters: lr_cutoff={DISPERSION_LR_CUTOFF}, "
-                        f"elec_lr_cutoff={self.elec_lr_cutoff}, "
+                        f"elec_lr_cutoff={self.elec_lr_cutoff}, model={self.model}, "
                         f"dispersion_damping={self.dispersion_energy_lr_cutoff_damping}, "
                         f"output_per_atom={self.output_per_atom_energy_components}")
 
@@ -147,7 +144,8 @@ class So3lrSfCalculator:
                     calculate_stress=False,
                     dtype=self.dtype,
                     add_energy_shift=False,
-                    output_per_atom_energy_components=self.output_per_atom_energy_components
+                    output_per_atom_energy_components=self.output_per_atom_energy_components,
+                    **self._model_kw,
                 )
             finally:
                 # Restore original logging levels
@@ -192,10 +190,21 @@ class So3lrSfCalculator:
             try:
                 return self._calculate_energy_jax_md(atoms)
             except Exception as e:
+                if self.model is not None:
+                    logger.warning(
+                        f"JAX-MD calculation failed for model={self.model!r}: {e}. "
+                        "No fallback is available for a custom checkpoint."
+                    )
+                    raise
                 logger.debug(f"JAX-MD calculation failed ({e}), falling back to MLFF calculator")
                 # Fallback to MLFF calculator
                 return self._calculate_energy_so3lr(atoms)
         else:
+            if self.model is not None:
+                raise RuntimeError(
+                    f"JAX is required to evaluate a custom checkpoint (model={self.model!r}); "
+                    "the MLFF/ASE fallback only supports the bundled SO3LR weights."
+                )
             logger.debug("JAX not available, using MLFF calculator")
             return self._calculate_energy_so3lr(atoms)
 
@@ -250,8 +259,8 @@ class So3lrSfCalculator:
         return residue_charge, residue_segments
 
     def _build_potential(self, jax_dtype):
-        """Build the bundled SO3LR potential with the electrostatic long-range
-        cutoff decoupled from the dispersion / neighbour-list cutoff.
+        """Build the SO3LR potential, with the electrostatic long-range cutoff
+        decoupled from the pinned dispersion / neighbour-list cutoff.
         """
         long_range_kwargs = dict(
             cutoff_lr=DISPERSION_LR_CUTOFF,
@@ -266,9 +275,17 @@ class So3lrSfCalculator:
             extra_kwargs['output_intermediate_quantities'] = [
                 'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'
             ]
+
+        if self.model is None:
+            workdir = Path(so3lr.__file__).parent / 'params'
+            from_file = True
+        else:
+            workdir = self.model
+            from_file = (Path(self.model) / 'params.pkl').exists()
+
         return MLFFPotentialSparse.create_from_workdir(
-            workdir=Path(so3lr.__file__).parent / 'params',
-            from_file=True,
+            workdir=workdir,
+            from_file=from_file,
             dtype=jax_dtype,
             long_range_kwargs=long_range_kwargs,
             **extra_kwargs,
@@ -283,9 +300,6 @@ class So3lrSfCalculator:
         positions = jnp.array(atoms.get_positions(), dtype=jax_dtype)
         atomic_numbers = jnp.array(atoms.get_atomic_numbers(), dtype=jnp.int32)
 
-        # Total charge / spin come from the ASE atoms.info dict (set upstream from
-        # the CLI --charge-* args). so3lr's stock JAX-MD featurizer hardcodes
-        # total_charge=0, so we read them here and inject them below.
         total_charge = float(atoms.info.get('charge', 0.0))
         multiplicity = atoms.info.get('multiplicity')
         num_unpaired_electrons = float(multiplicity - 1) if multiplicity is not None else 0.0
@@ -328,6 +342,7 @@ class So3lrSfCalculator:
         residue_segments_arr = (
             jnp.asarray(residue_segments, dtype=jnp.int32) if residue_segments is not None else None
         )
+        theory_mask_arr = jnp.eye(16, dtype=jax_dtype)[5].reshape(1, -1)
 
         def energy_fn(R, neighbor, neighbor_lr, has_aux=False, **energy_fn_kwargs):
             graph = featurizer(R, neighbor, neighbor_lr, **energy_fn_kwargs)
@@ -336,6 +351,7 @@ class So3lrSfCalculator:
                 num_unpaired_electrons=num_unpaired_arr,
                 residue_charge=residue_charge_arr,
                 residue_segments=residue_segments_arr,
+                theory_mask=theory_mask_arr,
             )
             if has_aux:
                 return potential(graph, has_aux=True)
@@ -399,9 +415,11 @@ class So3lrSfCalculator:
 
         Returns:
             dict or None: Dictionary mapping component names to per-atom energy arrays.
-                         Keys typically include 'nn_energy', 'zbl_repulsion',
-                         'electrostatic_energy', 'dispersion_energy'. Returns None if
-                         per-atom components were not enabled or no calculation performed.
+                         Keys typically include 'nn_energy', 'repulsion',
+                         'electrostatic_energy', 'dispersion_energy'. The 'repulsion'
+                         term is learnable ZBL for the bundled SO3LR weights and NLH for
+                         the SO3LR Tauri models. Returns None if per-atom
+                         components were not enabled or no calculation performed.
 
         Raises:
             ValueError: If per-atom energy components were not enabled during initialization
@@ -426,19 +444,27 @@ class So3lrSfCalculator:
         # Try JAX-MD aux data first
         if hasattr(self, '_last_aux_data') and self._last_aux_data:
             components = {}
-            component_keys = ['nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy']
+            aux_to_component = {
+                'nn_energy': 'nn_energy',
+                'zbl_repulsion': 'repulsion',
+                'electrostatic_energy': 'electrostatic_energy',
+                'dispersion_energy': 'dispersion_energy',
+            }
 
-            for component_key in component_keys:
-                if component_key in self._last_aux_data:
-                    components[component_key] = np.array(self._last_aux_data[component_key])
+            for aux_key, component_key in aux_to_component.items():
+                if aux_key in self._last_aux_data:
+                    components[component_key] = np.array(self._last_aux_data[aux_key])
                 else:
-                    logger.debug(f"Component {component_key} not found in aux data")
+                    logger.debug(f"Component {aux_key} not found in aux data")
 
             return components if components else None
 
         # Fall back to MLFF calculator
         if hasattr(self._calculator, 'get_per_atom_energy_components'):
-            return self._calculator.get_per_atom_energy_components()
+            mlff_components = self._calculator.get_per_atom_energy_components()
+            if mlff_components and 'zbl_repulsion' in mlff_components:
+                mlff_components['repulsion'] = mlff_components.pop('zbl_repulsion')
+            return mlff_components
         else:
             logger.debug("Calculator does not support per-atom energy components")
             return None

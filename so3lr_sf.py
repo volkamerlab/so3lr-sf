@@ -53,6 +53,9 @@ Examples:
 
   # Process ligand directory with double precision
   python so3lr_sf.py protein.pdb ligands.sdf --optimize --exp-lig --dp
+
+  # Use a SO3LR Tauri model or a finetuned checkpoint instead of the bundled SO3LR weights
+  python so3lr_sf.py protein.pdb ligand.sdf --model PATH/TO/MODEL
         """
     )
 
@@ -140,6 +143,13 @@ Examples:
         default=10.0,
         help="Long-range cutoff (Angstroms) for the electrostatic term (default: 10.0). "
              "Recommended: 10 for ranking, 1000 for absolute interaction energies vs DFT."
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Path to a SO3LR checkpoint directory (with hyperparameters.json plus "
+             "params.pkl or checkpoints/). Omit to use the bundled SO3LR weights."
     )
 
     # Charge parameters
@@ -245,6 +255,8 @@ def main():
         if args.dp:
             calc_kwargs['dp'] = True
         calc_kwargs['elec_lr_cutoff'] = args.elec_lr_cutoff
+        if args.model is not None:
+            calc_kwargs['model'] = args.model
 
         logger.debug(f"Calculator kwargs: {calc_kwargs}")
         logger.info("Initializing SO3LRSF calculator...")
@@ -276,6 +288,16 @@ def main():
         ligand_files = get_ligand_files(args.ligands, output_dir)
         logger.info(f"Processing {len(ligand_files)} ligands...")
 
+        # The protein-alone energy is identical for every ligand only when nothing is charged
+        # and no per-atom components (explainability/EDA) are needed, so cache it just then.
+        use_protein_cache = (
+            len(ligand_files) > 1
+            and not (args.exp_lig or args.exp_prot or args.exp_3d or args.eda)
+            and args.charge_prot == 0 and args.charge_lig == 0 and args.charge_cpx == 0
+        )
+        protein_energy_cache = {} if use_protein_cache else None
+        logger.info(f"Protein energy cache: {'on' if use_protein_cache else 'off'}")
+
         results = []
         failed_count = 0
         
@@ -287,7 +309,8 @@ def main():
                 ligand_file, args, calc, working_protein_path,
                 output_dir, optimization_log, logger,
                 preloaded_protein_prolif,
-                charges=(args.charge_prot, args.charge_lig, args.charge_cpx)
+                charges=(args.charge_prot, args.charge_lig, args.charge_cpx),
+                protein_energy_cache=protein_energy_cache,
             )
 
             if error:

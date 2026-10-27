@@ -18,6 +18,19 @@ from .molecule_loader import load_ase_structure
 from .explainability import generate_energy_heatmap
 from .explain_utils import compute_energy_differences
 
+def _cached_protein_energy(calc: So3lrSfCalculator, protein_atoms: Atoms,
+                            protein_energy_cache: Optional[Dict],
+                            protein_cache_key: Optional[Any]) -> float:
+    """Protein-alone energy, memoised in protein_energy_cache under protein_cache_key
+    when both are given."""
+    if protein_energy_cache is not None and protein_cache_key in protein_energy_cache:
+        return protein_energy_cache[protein_cache_key]
+    e_protein = calc.calculate_energy(protein_atoms)
+    if protein_energy_cache is not None:
+        protein_energy_cache[protein_cache_key] = e_protein
+    return e_protein
+
+
 def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, Path],
                       complex_path: Optional[Union[str, Path]] = None, logger=None,
                       charges: Tuple[int, int, int] = (0, 0, 0)) -> Tuple[Atoms, Atoms, Atoms]:
@@ -73,7 +86,9 @@ def prepare_structures(protein_path: Union[str, Path], ligand_path: Union[str, P
 
 def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, calc: So3lrSfCalculator,
                                 explainability: bool = False, logger=None,
-                                per_fragment_charges: bool = True) -> Tuple[float, float, Optional[Dict], Optional[Dict]]:
+                                per_fragment_charges: bool = True,
+                                protein_energy_cache: Optional[Dict] = None,
+                                protein_cache_key: Optional[Any] = None) -> Tuple[float, float, Optional[Dict], Optional[Dict]]:
     """
     Calculate energies for protein and ligand non interacting.
 
@@ -86,6 +101,12 @@ def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, cal
         per_fragment_charges: Conserve charge on each fragment separately rather than
             over the combined system. Only affects charged fragments; without it the
             net charge is smeared across two fragments 10000 A apart.
+        protein_energy_cache: Optional dict for memoising the protein-alone energy
+            across a target's ligand series. Only used when both fragments are
+            neutral or for calculators without supports_fragment_eda;
+            never use for charged fragments, where the split and combined paths
+            are not interchangeable.
+        protein_cache_key: Key (e.g. protein path + charge) into protein_energy_cache.
 
     Returns:
         Tuple of (non_interaction_energy, protein_components, ligand_components)
@@ -94,10 +115,27 @@ def calculate_individual_energies(protein_atoms: Atoms, ligand_atoms: Atoms, cal
         logger = logging.getLogger(__name__)
 
     logger.info("Calculating non-interacting energy...")
+
+    if not getattr(calc, "supports_fragment_eda", False):
+        non_interaction_energy = (
+            _cached_protein_energy(calc, protein_atoms, protein_energy_cache, protein_cache_key)
+            + calc.calculate_energy(ligand_atoms)
+        )
+        if explainability:
+            logger.warning(
+                "Per-atom energy component explainability is only supported for So3lrSfCalculator"
+            )
+        return non_interaction_energy, None, None
+
     n_protein = len(protein_atoms)
     n_ligand = len(ligand_atoms)
     protein_charge = protein_atoms.info.get('charge', 0)
     ligand_charge = ligand_atoms.info.get('charge', 0)
+
+    if protein_charge == 0 and ligand_charge == 0 and not explainability:
+        e_protein = _cached_protein_energy(calc, protein_atoms, protein_energy_cache, protein_cache_key)
+        e_ligand = calc.calculate_energy(ligand_atoms)
+        return e_protein + e_ligand, None, None
 
     atomic_numbers = np.concatenate((protein_atoms.get_atomic_numbers(), ligand_atoms.get_atomic_numbers()), axis=None)
     ligand_positions = ligand_atoms.get_positions() + np.array([10000.0, 0.0, 0.0])
@@ -342,6 +380,7 @@ def protein_ligand_interaction(
     exp_outputs: Optional[Tuple[Optional[Union[str, Path]], Optional[Union[str, Path]], Optional[Union[str, Path]]]] = None,
     charges: Tuple[Optional[int], Optional[int], Optional[int]] = (0, 0, 0),
     per_fragment_charges: bool = True,
+    protein_energy_cache: Optional[Dict] = None,
 ) -> Union[float, Tuple[float, Dict[str, Any]]]:
     """
     Calculate protein-ligand interaction energy with optional explainability.
@@ -402,7 +441,9 @@ def protein_ligand_interaction(
     # Step 2: Calculate individual energies
     non_interaction_energy, protein_components, ligand_components = calculate_individual_energies(
         protein_atoms, ligand_atoms, calc, exp_mode or eda, logger,
-        per_fragment_charges=per_fragment_charges
+        per_fragment_charges=per_fragment_charges,
+        protein_energy_cache=protein_energy_cache,
+        protein_cache_key=(str(protein_path), charges[0]),
     )
 
     # Step 3: Calculate complex energy
