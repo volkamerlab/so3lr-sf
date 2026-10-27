@@ -1,8 +1,4 @@
-<p align="center">
-  <img src="logo/so3lrsf_overview.png" alt="SO3LR-SF overview" width="100%">
-</p>
-
-# **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
+# **SO3LR-SF** - Explainable ML force-field for evaluating protein–ligand binding energy using SO3LR
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/volkamerlab/so3lr-sf/graph/badge.svg?token=A0X4RNCKBI)](https://codecov.io/gh/volkamerlab/so3lr-sf)
@@ -10,6 +6,10 @@
 [![Preprint](https://img.shields.io/badge/preprint-ChemRxiv-critical.svg)](https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1)
 
 SO3LR-SF is a comprehensive Python package for calculating protein-ligand interaction energies using SO3LR machine learning force fields. It provides advanced features including structure optimization, explainability analysis, and molecular visualization.
+
+<p align="center">
+  <img src="logo/so3lrsf_overview.png" alt="SO3LR-SF overview" width="100%">
+</p>
 
 <details>
 <summary><h2>🚀 Features</h2></summary>
@@ -95,9 +95,6 @@ SO3LR model. Select one with `--model PATH/TO/MODEL`, a path to the model's chec
 directory (holding `hyperparameters.json` plus `params.pkl` or `checkpoints/`); finetuned
 checkpoints in the same layout work too. Without `--model`, `so3lrsf` uses the SO3LR
 weights bundled with the pinned `so3lr` package.
-
-The checkpoints live under `models/<name>/` (~26 MB in total) and are kept out of git,
-so place your copy there before running:
 
 ```bash
 uv run so3lrsf --protein protein.pdb --ligands ligand.sdf --model PATH/TO/MODEL
