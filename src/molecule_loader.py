@@ -140,6 +140,26 @@ def create_residue_atom_mapping(universe: mda.Universe) -> Dict[str, List[int]]:
     }
 
 
+def create_prolif_residue_atom_mapping(molecule: plf.Molecule) -> Dict[str, List[int]]:
+    """
+    Create mapping of ProLIF residue labels to their MDAnalysis atom indices.
+
+    Keys are ``str(plf.ResidueId)``, the same labels ProLIF fingerprints report
+    (e.g. "ALA1.A", or "ala1" when the PDB has no chain ID), so residue energies can
+    be looked up by the interacting residue name.
+
+    Args:
+        molecule: ProLIF Molecule built with ``plf.Molecule.from_mda``
+
+    Returns:
+        Dict mapping ProLIF residue label to list of atom indices
+    """
+    mapping: Dict[str, List[int]] = {}
+    for atom in molecule.GetAtoms():
+        mapping.setdefault(str(plf.ResidueId.from_atom(atom)), []).append(
+            atom.GetIntProp("_MDAnalysis_index")
+        )
+    return mapping
 
 
 def prepare_mda_universe(file_path: Path) -> mda.Universe:
@@ -216,10 +236,12 @@ def load_molecule_to_prolif(
             )
 
         universe = prepare_mda_universe(file_path)
-        residue_mapping = create_residue_atom_mapping(universe)
 
         try:
             molecule = plf.Molecule.from_mda(universe)
+            # Keyed like the fingerprint's residue labels; create_residue_atom_mapping's
+            # "resname+resid.segid" keys never match when the PDB has no chain ID.
+            residue_mapping = create_prolif_residue_atom_mapping(molecule)
             return molecule, residue_mapping
         except Exception as e:
             raise ValueError(f"Could not create ProLIF molecule from {file_path}: {e}")
