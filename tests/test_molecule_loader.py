@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from ase import Atoms
 import MDAnalysis as mda
-import prolif as plf
 
 from src.molecule_loader import (
     validate_structure,
@@ -21,7 +20,6 @@ from src.molecule_loader import (
     load_ase_structure,
     prepare_mda_universe,
     create_residue_atom_mapping,
-    create_prolif_residue_atom_mapping,
     load_molecule_to_prolif,
     extract_ligands
 )
@@ -185,8 +183,9 @@ class TestMoleculeLoader:
         mock_res1 = Mock()
         mock_res1.resname = 'ALA'
         mock_res1.resid = 1
-        mock_res1.segid = 'A'
-        mock_res1.atoms = [mock_atom1, mock_atom2, mock_atom3, mock_atom4]
+        mock_res1.atoms = MagicMock()
+        mock_res1.atoms.__iter__.return_value = iter([mock_atom1, mock_atom2, mock_atom3, mock_atom4])
+        mock_res1.atoms.chainIDs = np.array(['A'] * 4)
 
         # Mock atoms for residue 2
         mock_atom5 = Mock()
@@ -200,17 +199,18 @@ class TestMoleculeLoader:
 
         # Mock residue 2
         mock_res2 = Mock()
-        mock_res2.resname = 'VAL'
+        mock_res2.resname = 'val'
         mock_res2.resid = 2
-        mock_res2.segid = 'A'
-        mock_res2.atoms = [mock_atom5, mock_atom6, mock_atom7, mock_atom8]
+        mock_res2.atoms = MagicMock()
+        mock_res2.atoms.__iter__.return_value = iter([mock_atom5, mock_atom6, mock_atom7, mock_atom8])
+        mock_res2.atoms.chainIDs = np.array([''] * 4)
 
         mock_universe.residues = [mock_res1, mock_res2]
 
         result = create_residue_atom_mapping(mock_universe)
         expected = {
             'ALA1.A': [0, 1, 2, 3],
-            'VAL2.A': [4, 5, 6, 7]
+            'VAL2': [4, 5, 6, 7]  # capitalized, no chain part without a chain ID
         }
         assert result == expected
 
@@ -250,7 +250,7 @@ class TestMoleculeLoader:
 
         try:
             with patch('src.molecule_loader.prepare_mda_universe') as mock_prepare:
-                with patch('src.molecule_loader.create_prolif_residue_atom_mapping') as mock_mapping:
+                with patch('src.molecule_loader.create_residue_atom_mapping') as mock_mapping:
                     with patch('src.molecule_loader.plf.Molecule.from_mda') as mock_prolif:
                         mock_prepare.return_value = Mock()
                         mock_mapping.return_value = {}
@@ -284,7 +284,7 @@ class TestMoleculeLoader:
         assert result is not None
 
     @patch('src.molecule_loader.prepare_mda_universe')
-    @patch('src.molecule_loader.create_prolif_residue_atom_mapping')
+    @patch('src.molecule_loader.create_residue_atom_mapping')
     @patch('src.molecule_loader.plf.Molecule.from_mda')
     def test_load_molecule_to_prolif_success_protein(self, mock_prolif, mock_mapping, mock_prepare):
         """Test successful protein loading."""
@@ -293,6 +293,7 @@ class TestMoleculeLoader:
 
         try:
             mock_universe = Mock()
+            mock_universe.residues.resnames = np.array(['res'])
             mock_prepare.return_value = mock_universe
             mock_mapping.return_value = {'RES1': [0, 1, 2]}
             mock_molecule = Mock()
@@ -305,26 +306,23 @@ class TestMoleculeLoader:
         finally:
             tmp_path.unlink(missing_ok=True)
 
-    def test_create_prolif_residue_atom_mapping_no_chain_id(self, test_data_dir):
-        """Keys match ProLIF residue labels when the PDB has no chain ID (segid "SYSTEM")."""
+    def test_residue_mapping_no_chain_id(self, test_data_dir):
+        """Without a chain ID, keys are "RESNAME+resid" and match ProLIF's residue labels."""
         pdb = test_data_dir / "2CET_prot.pdb"
         if not pdb.exists():
             pytest.skip("2CET_prot.pdb not found in test_data")
 
         molecule, mapping = load_molecule_to_prolif(pdb, is_protein=True)
-        prolif_labels = {str(resid) for resid in molecule.residues}
 
-        assert set(mapping) == prolif_labels
-        assert all("SYSTEM" not in key for key in mapping)
-        # The old "resname+resid.segid" keys never match these labels
-        old_keys = set(create_residue_atom_mapping(prepare_mda_universe(pdb)))
-        assert not old_keys & prolif_labels
+        assert set(mapping) == {str(resid) for resid in molecule.residues}
+        assert "BBN1" in mapping and "HIE6" in mapping
+        assert all("." not in key and key[:3].isupper() for key in mapping)
         # Every atom is assigned to exactly one residue
         indices = sorted(i for atom_indices in mapping.values() for i in atom_indices)
         assert indices == list(range(molecule.GetNumAtoms()))
 
-    def test_create_prolif_residue_atom_mapping_with_chain_id(self, test_data_dir, tmp_path):
-        """Keys carry the chain ID, matching ProLIF labels such as "bbn1.A"."""
+    def test_residue_mapping_with_chain_id(self, test_data_dir, tmp_path):
+        """With a chain ID, keys are "RESNAME+resid.chainID" and match ProLIF's residue labels."""
         pdb = test_data_dir / "2CET_prot.pdb"
         if not pdb.exists():
             pytest.skip("2CET_prot.pdb not found in test_data")
@@ -338,10 +336,10 @@ class TestMoleculeLoader:
         chain_pdb = tmp_path / "2CET_prot_chainA.pdb"
         chain_pdb.write_text("\n".join(lines) + "\n")
 
-        molecule = plf.Molecule.from_mda(prepare_mda_universe(chain_pdb))
-        mapping = create_prolif_residue_atom_mapping(molecule)
+        molecule, mapping = load_molecule_to_prolif(chain_pdb, is_protein=True)
 
         assert set(mapping) == {str(resid) for resid in molecule.residues}
+        assert "BBN1.A" in mapping
         assert all(key.endswith(".A") for key in mapping)
 
     def test_load_ase_structure_reading_exception(self):

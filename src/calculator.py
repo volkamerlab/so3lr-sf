@@ -210,7 +210,6 @@ class So3lrSfCalculator:
         displacement, shift = space.free()
 
         # Choose potential based on EDA requirements
-        print(f"Output per-atom energy components enabled: {self.lr_cutoff}, {self.dispersion_energy_lr_cutoff_damping}")
         if self.output_per_atom_energy_components:
             potential = so3lr_potential_eda(
                 dtype=jax_dtype,
