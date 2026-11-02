@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from ase import Atoms
 import MDAnalysis as mda
+import prolif as plf
 
 from src.molecule_loader import (
     validate_structure,
@@ -20,6 +21,7 @@ from src.molecule_loader import (
     load_ase_structure,
     prepare_mda_universe,
     create_residue_atom_mapping,
+    create_prolif_residue_atom_mapping,
     load_molecule_to_prolif,
     extract_ligands
 )
@@ -248,7 +250,7 @@ class TestMoleculeLoader:
 
         try:
             with patch('src.molecule_loader.prepare_mda_universe') as mock_prepare:
-                with patch('src.molecule_loader.create_residue_atom_mapping') as mock_mapping:
+                with patch('src.molecule_loader.create_prolif_residue_atom_mapping') as mock_mapping:
                     with patch('src.molecule_loader.plf.Molecule.from_mda') as mock_prolif:
                         mock_prepare.return_value = Mock()
                         mock_mapping.return_value = {}
@@ -282,7 +284,7 @@ class TestMoleculeLoader:
         assert result is not None
 
     @patch('src.molecule_loader.prepare_mda_universe')
-    @patch('src.molecule_loader.create_residue_atom_mapping')
+    @patch('src.molecule_loader.create_prolif_residue_atom_mapping')
     @patch('src.molecule_loader.plf.Molecule.from_mda')
     def test_load_molecule_to_prolif_success_protein(self, mock_prolif, mock_mapping, mock_prepare):
         """Test successful protein loading."""
@@ -302,6 +304,45 @@ class TestMoleculeLoader:
             assert result[1] == {'RES1': [0, 1, 2]}
         finally:
             tmp_path.unlink(missing_ok=True)
+
+    def test_create_prolif_residue_atom_mapping_no_chain_id(self, test_data_dir):
+        """Keys match ProLIF residue labels when the PDB has no chain ID (segid "SYSTEM")."""
+        pdb = test_data_dir / "2CET_prot.pdb"
+        if not pdb.exists():
+            pytest.skip("2CET_prot.pdb not found in test_data")
+
+        molecule, mapping = load_molecule_to_prolif(pdb, is_protein=True)
+        prolif_labels = {str(resid) for resid in molecule.residues}
+
+        assert set(mapping) == prolif_labels
+        assert all("SYSTEM" not in key for key in mapping)
+        # The old "resname+resid.segid" keys never match these labels
+        old_keys = set(create_residue_atom_mapping(prepare_mda_universe(pdb)))
+        assert not old_keys & prolif_labels
+        # Every atom is assigned to exactly one residue
+        indices = sorted(i for atom_indices in mapping.values() for i in atom_indices)
+        assert indices == list(range(molecule.GetNumAtoms()))
+
+    def test_create_prolif_residue_atom_mapping_with_chain_id(self, test_data_dir, tmp_path):
+        """Keys carry the chain ID, matching ProLIF labels such as "bbn1.A"."""
+        pdb = test_data_dir / "2CET_prot.pdb"
+        if not pdb.exists():
+            pytest.skip("2CET_prot.pdb not found in test_data")
+
+        lines = []
+        for line in pdb.read_text().splitlines():
+            if line.startswith(("ATOM", "HETATM")):
+                line = line.ljust(80)
+                line = line[:21] + "A" + line[22:]
+            lines.append(line.rstrip())
+        chain_pdb = tmp_path / "2CET_prot_chainA.pdb"
+        chain_pdb.write_text("\n".join(lines) + "\n")
+
+        molecule = plf.Molecule.from_mda(prepare_mda_universe(chain_pdb))
+        mapping = create_prolif_residue_atom_mapping(molecule)
+
+        assert set(mapping) == {str(resid) for resid in molecule.residues}
+        assert all(key.endswith(".A") for key in mapping)
 
     def test_load_ase_structure_reading_exception(self):
         """Test load_ase_structure with reading exception during file processing."""
