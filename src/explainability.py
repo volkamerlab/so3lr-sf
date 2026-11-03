@@ -549,9 +549,19 @@ def generate_protein_interaction_heatmap(
 
             # Calculate percentage
             if abs(total_interaction_energy) > 1e-9:
-                percentage = abs(displayed_total / total_interaction_energy) * 100
+                percentage = displayed_total / total_interaction_energy * 100
                 if ligand_energy_percent is not None:
                     clarified_title = f"{title}\n(Total Binding Energy of the Ligand {ligand_energy_percent:.1f} + Interacting Residues: {percentage - ligand_energy_percent:.1f}%)"
+                    # Summed from the residues with no ProLIF interaction
+                    if residue_weights:
+                        remaining_energy = sum(
+                            weights.get('Total', 0.0)
+                            for residue, weights in residue_weights.items()
+                            if residue not in residue_interactions
+                        )
+                        remaining_percent = remaining_energy / total_interaction_energy * 100
+                        effect = "destabilizing" if remaining_percent < 0 else "stabilizing"
+                        clarified_title += f"\nRemaining residues: {remaining_percent:.1f}% ({effect})"
                 else:
                     clarified_title = f"{title}\n(Ligand + Interacting Residues: {percentage:.1f}% of Total Binding Energy)"
             else:
@@ -559,7 +569,7 @@ def generate_protein_interaction_heatmap(
         else:
             clarified_title = f"{title}\n(Ligand + Interacting Protein Residue Contributions)"
 
-        fig.suptitle(clarified_title, fontsize=16, y=0.95)
+        fig.suptitle(clarified_title, fontsize=16, y=0.95 + 0.05 * (clarified_title.count("\n") - 1))
 
     # Add interaction summary at bottom
     add_interaction_summary(fig, atom_mappings)
