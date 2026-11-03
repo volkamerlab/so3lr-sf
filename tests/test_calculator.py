@@ -189,6 +189,33 @@ class TestSo3lrSfCalculator:
         except Exception as e:
             pytest.fail(f"SO3LR calculation failed: {e}")
 
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_calculator_per_atom_components_symmetric_pair_split(self, alanine_files):
+        """Per-atom electrostatic and dispersion energies must be split 50/50 across each pair
+        (permutation-invariant under atom reordering, with non-zero values on the last atom)."""
+        calc = So3lrSfCalculator(output_per_atom_energy_components=True, dp=True)
+        atoms = load_ase_structure(alanine_files['xyz'])[0]
+        atoms_rev = atoms[::-1]
+
+        e_fwd = calc.calculate_energy(atoms)
+        comp_fwd = calc.get_per_atom_energy_components()
+
+        e_rev = calc.calculate_energy(atoms_rev)
+        comp_rev = calc.get_per_atom_energy_components()
+
+        assert e_fwd == pytest.approx(e_rev, abs=1e-6)
+        assert abs(float(comp_fwd['electrostatic_energy'][-1])) > 1e-6
+        assert abs(float(comp_fwd['dispersion_energy'][-1])) > 1e-6
+
+        for key in ('nn_energy', 'repulsion', 'electrostatic_energy', 'dispersion_energy'):
+            np.testing.assert_allclose(
+                comp_fwd[key],
+                comp_rev[key][::-1],
+                atol=1e-6,
+                err_msg=f"Per-atom {key} depends on atom ordering (not split 50/50)",
+            )
     @pytest.mark.integration
     @pytest.mark.slow
     def test_calculator_per_atom_components_new_model(self):
