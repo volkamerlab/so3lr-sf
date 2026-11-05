@@ -262,13 +262,10 @@ class So3lrSfCalculator:
         """Build the SO3LR potential, with the electrostatic long-range cutoff
         decoupled from the pinned dispersion / neighbour-list cutoff.
         """
-        neighborlist_format_lr = (
-            'sparse' if self.output_per_atom_energy_components else 'ordered_sparse'
-        )
         long_range_kwargs = dict(
             cutoff_lr=DISPERSION_LR_CUTOFF,
             dispersion_energy_cutoff_lr_damping=self.dispersion_energy_lr_cutoff_damping,
-            neighborlist_format_lr=neighborlist_format_lr,
+            neighborlist_format_lr='ordered_sparse',
             coulomb_kspace_do_ewald=False,
             coulomb_kspace_interp_nodes=4,
             electrostatic_cutoff_lr=self.elec_lr_cutoff,
@@ -366,10 +363,8 @@ class So3lrSfCalculator:
 
         # Calculate energy
         if self.output_per_atom_energy_components:
-            # Symmetrize the OrderedSparse long-range neighbor list so each pair (i, j)
-            # is split 50/50 between atom i and atom j under neighborlist_format_lr='sparse'.
-            nbrs_lr_idx = jnp.concatenate([nbrs_lr.idx, nbrs_lr.idx[::-1]], axis=1)
-            result = energy_fn(positions, neighbor=nbrs.idx, neighbor_lr=nbrs_lr_idx, box=None, has_aux=True)
+            # For EDA-enabled potential, we need to handle aux output
+            result = energy_fn(positions, neighbor=nbrs.idx, neighbor_lr=nbrs_lr.idx, box=None, has_aux=True)
             if isinstance(result, tuple):
                 energy = result[0]
                 self._last_aux_data = result[1]  # Store aux data for component extraction
