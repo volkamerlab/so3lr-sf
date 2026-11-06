@@ -39,7 +39,7 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 <summary><h2>📦 Installation</h2></summary>
 
 ### Prerequisites
-- Python 3.12 or 3.13 (required by `so3lr` v0.2.0)
+- Python 3.12 or 3.13
 - [uv](https://docs.astral.sh/uv/) (package & environment manager)
 
 If you don't have `uv` yet:
@@ -467,7 +467,7 @@ If you use SO3LR-SF in your work, please cite the preprint:
 
 > Hamza Agha, Sergio Suárez-Dou, Adil Kabylda, Alexandre Tkatchenko, Andrea Volkamer.
 > *Explainable ML force-field for evaluating protein–ligand binding energy using SO3LR*.
-> ChemRxiv (2026). https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1
+> ChemRxiv (2026). https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v2
 
 ```bibtex
 @article{so3lrsf2026agha,
@@ -475,8 +475,8 @@ If you use SO3LR-SF in your work, please cite the preprint:
   title   = {Explainable ML force-field for evaluating protein--ligand binding energy using SO3LR},
   journal = {ChemRxiv},
   year    = {2026},
-  doi     = {10.26434/chemrxiv.15008482/v1},
-  url     = {https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1},
+  doi     = {10.26434/chemrxiv.15008482/v2},
+  url     = {https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v2},
   note    = {Preprint}
 }
 ```

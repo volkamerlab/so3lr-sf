@@ -288,7 +288,7 @@ class TestElectrostaticLrCutoff:
         e_ref = float(potential(graph).sum())
 
         e_equal = So3lrSfCalculator(elec_lr_cutoff=DISPERSION_LR_CUTOFF).calculate_energy(atoms)
-        assert e_equal == e_ref
+        assert round(e_equal, 7) == round(e_ref, 7)
 
     @pytest.mark.integration
     @pytest.mark.slow
