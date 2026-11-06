@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# NVIDIA CUDA 12 base image, compatible with JAX 0.5.3.
+# NVIDIA CUDA 12 base image, compatible with JAX 0.10.2.
 FROM nvidia/cuda:12.6.3-devel-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 3) Add the JAX CUDA 12 plugin so JAX can use the GPU. The base pin in
 #    pyproject.toml is CPU-only jaxlib; this layers the CUDA PJRT plugin on top.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install "jax[cuda12]==0.5.3"
+    uv pip install "jax[cuda12]==0.10.2"
 
 # Interactive shells start inside the project virtual environment.
 RUN echo 'source /app/.venv/bin/activate' >> /root/.bashrc

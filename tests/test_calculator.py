@@ -309,3 +309,33 @@ class TestElectrostaticLrCutoff:
         assert abs(e_10 - e_wide) > 1e-3
         assert abs(e_4 - e_wide) > 1e-3
         print(f"water: elec@1000={e_wide:.6f}  elec@10={e_10:.6f}  elec@4={e_4:.6f}")
+
+class TestModelNames:
+    """so3lr-sf short aliases and upstream registry names resolve to bundled model dirs."""
+
+    @pytest.mark.parametrize("alias, canonical", [
+        ("so3lr-t-s", "so3lr-tauri-s-2606"),
+        ("so3lr-t-m", "so3lr-tauri-m-2606"),
+        ("so3lr-t-l", "so3lr-tauri-l-2606"),
+        ("SO3LR-T-M", "so3lr-tauri-m-2606"),
+    ])
+    def test_short_alias_maps_to_2606(self, alias, canonical):
+        from src.calculator import resolve_model_name
+        assert resolve_model_name(alias) == canonical
+
+    @pytest.mark.parametrize("name", [None, "so3lr", "so3lr-tauri-m-2602", "PATH/TO/MODEL"])
+    def test_other_names_pass_through(self, name):
+        from src.calculator import resolve_model_name
+        assert resolve_model_name(name) == name
+
+    @pytest.mark.parametrize("name", ["so3lr-t-s", "so3lr-t-m", "so3lr-t-l", "so3lr", None])
+    def test_names_resolve_to_bundled_params(self, name):
+        model_registry = pytest.importorskip("so3lr.model_registry")
+        from src.calculator import resolve_model_name
+        spec = model_registry.resolve_model(resolve_model_name(name))
+        assert (spec.dir / "params.pkl").is_file()
+
+    def test_unknown_name_raises(self):
+        model_registry = pytest.importorskip("so3lr.model_registry")
+        with pytest.raises(FileNotFoundError):
+            model_registry.resolve_model("so3lr-t-xl")
