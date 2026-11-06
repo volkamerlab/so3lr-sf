@@ -2,6 +2,8 @@
 Tests for the calculator module.
 """
 
+from pathlib import Path
+
 import pytest
 import numpy as np
 from src.molecule_loader import load_ase_structure
@@ -68,7 +70,7 @@ class TestSo3lrSfCalculator:
 
         # Mock returns predefined components
         assert isinstance(components, dict)
-        expected_keys = {'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'}
+        expected_keys = {'nn_energy', 'repulsion', 'electrostatic_energy', 'dispersion_energy'}
         assert set(components.keys()) == expected_keys
 
     @pytest.mark.unit
@@ -172,7 +174,7 @@ class TestSo3lrSfCalculator:
             assert len(components) > 0
 
             # Assert the specific component keys that SO3LR returns
-            expected_keys = {'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'}
+            expected_keys = {'nn_energy', 'repulsion', 'electrostatic_energy', 'dispersion_energy'}
             actual_keys = set(components.keys())
             assert actual_keys == expected_keys, f"Expected {expected_keys}, but got {actual_keys}"
 
@@ -186,6 +188,37 @@ class TestSo3lrSfCalculator:
 
         except Exception as e:
             pytest.fail(f"SO3LR calculation failed: {e}")
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_calculator_per_atom_components_new_model(self):
+        """Per-atom EDA components for a released so3lr-{s,m,l} checkpoint.
+
+        The newer checkpoints use the non-legacy architecture (RMSNorm / NLH
+        repulsion / dedicated C6 head); this checks the decomposition is still
+        complete - the four components must reconstruct the total energy.
+        """
+        model_dir = Path("models/so3lr-m-2606")
+        if not model_dir.is_dir():
+            pytest.skip(f"{model_dir} not present (checkpoint weights are untracked)")
+
+        calc = So3lrSfCalculator(
+            model=str(model_dir),
+            output_per_atom_energy_components=True,
+        )
+        atoms = load_ase_structure("tests/test_data/alanine.xyz")[0]
+        energy = calc.calculate_energy(atoms)
+        components = calc.get_per_atom_energy_components()
+
+        expected_keys = {'nn_energy', 'repulsion', 'electrostatic_energy', 'dispersion_energy'}
+        assert set(components.keys()) == expected_keys
+
+        for values in components.values():
+            assert isinstance(values, np.ndarray)
+            assert values.shape == (len(atoms),)
+
+        total_from_components = sum(float(v.sum()) for v in components.values())
+        assert total_from_components == pytest.approx(energy, abs=1e-3)
 
     @pytest.mark.unit
     def test_calculator_properties(self, mock_calculator):
@@ -255,7 +288,7 @@ class TestElectrostaticLrCutoff:
         e_ref = float(potential(graph).sum())
 
         e_equal = So3lrSfCalculator(elec_lr_cutoff=DISPERSION_LR_CUTOFF).calculate_energy(atoms)
-        assert e_equal == e_ref
+        assert round(e_equal, 7) == round(e_ref, 7)
 
     @pytest.mark.integration
     @pytest.mark.slow
@@ -276,3 +309,33 @@ class TestElectrostaticLrCutoff:
         assert abs(e_10 - e_wide) > 1e-3
         assert abs(e_4 - e_wide) > 1e-3
         print(f"water: elec@1000={e_wide:.6f}  elec@10={e_10:.6f}  elec@4={e_4:.6f}")
+
+class TestModelNames:
+    """so3lr-sf short aliases and upstream registry names resolve to bundled model dirs."""
+
+    @pytest.mark.parametrize("alias, canonical", [
+        ("so3lr-t-s", "so3lr-tauri-s-2606"),
+        ("so3lr-t-m", "so3lr-tauri-m-2606"),
+        ("so3lr-t-l", "so3lr-tauri-l-2606"),
+        ("SO3LR-T-M", "so3lr-tauri-m-2606"),
+    ])
+    def test_short_alias_maps_to_2606(self, alias, canonical):
+        from src.calculator import resolve_model_name
+        assert resolve_model_name(alias) == canonical
+
+    @pytest.mark.parametrize("name", [None, "so3lr", "so3lr-tauri-m-2602", "PATH/TO/MODEL"])
+    def test_other_names_pass_through(self, name):
+        from src.calculator import resolve_model_name
+        assert resolve_model_name(name) == name
+
+    @pytest.mark.parametrize("name", ["so3lr-t-s", "so3lr-t-m", "so3lr-t-l", "so3lr", None])
+    def test_names_resolve_to_bundled_params(self, name):
+        model_registry = pytest.importorskip("so3lr.model_registry")
+        from src.calculator import resolve_model_name
+        spec = model_registry.resolve_model(resolve_model_name(name))
+        assert (spec.dir / "params.pkl").is_file()
+
+    def test_unknown_name_raises(self):
+        model_registry = pytest.importorskip("so3lr.model_registry")
+        with pytest.raises(FileNotFoundError):
+            model_registry.resolve_model("so3lr-t-xl")

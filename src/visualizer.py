@@ -16,7 +16,7 @@ Structure Format Requirements:
 - PDB format provides proper residue identification, secondary structure, and atomic connectivity
 - XYZ supported but may lack residues information and connectivity details
 
-Energy Components Supported: MLFF, ZBL, Electrostatics, Dispersion, Total
+Energy Components Supported: MLFF, Repulsion, Electrostatics, Dispersion, Total
 Color Scheme: Gray (neutral) → Red (unfavorable) / Blue (favorable)
 """
 
@@ -238,7 +238,7 @@ def create_pymol_session(complex_path: Union[str, Path],
                      (PDB format preferred for optimal visualization; XYZ supported)
         protein_energy_differences: Dict with energy component names as keys
                                    and per-atom energy differences as values
-                                   Components: MLFF, ZBL, Electrostatics, Dispersion, Total
+                                   Components: MLFF, Repulsion, Electrostatics, Dispersion, Total
         output_path: Path to save PyMOL session and script files
         session_name: Base name for output files (default: "protein_energy_visualization")
 

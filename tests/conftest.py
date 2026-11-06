@@ -37,7 +37,7 @@ class MockSo3lrSfCalculator:
 
         return {
             'nn_energy': np.array([0.1, 0.2, 0.3]),
-            'zbl_repulsion': np.array([0.0, 0.0, 0.0]),
+            'repulsion': np.array([0.0, 0.0, 0.0]),
             'electrostatic_energy': np.array([0.05, 0.1, 0.15]),
             'dispersion_energy': np.array([-0.01, -0.02, -0.03])
         }
@@ -321,7 +321,7 @@ def sample_energy_components():
     """Sample per-atom energy components for testing explainability."""
     return {
         'nn_energy': np.array([0.1, 0.2, 0.3, 0.4, 0.5]),
-        'zbl_repulsion': np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
+        'repulsion': np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
         'electrostatic_energy': np.array([0.05, 0.1, 0.15, 0.2, 0.25]),
         'dispersion_energy': np.array([-0.01, -0.02, -0.03, -0.04, -0.05])
     }

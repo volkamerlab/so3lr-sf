@@ -10,6 +10,7 @@ from pathlib import Path
 from ase import Atoms
 from ase.io import read
 from rdkit import Chem
+import numpy as np
 import MDAnalysis as mda
 import prolif as plf
 import logging
@@ -123,23 +124,29 @@ def create_residue_atom_mapping(universe: mda.Universe) -> Dict[str, List[int]]:
     """
     Create mapping of residue identifiers to their atom indices.
 
+    Keys follow ProLIF's residue labels: "RESNAME+resid.chainID", or "RESNAME+resid"
+    when the PDB has no chain ID, with the residue name in capitals.
+
     Args:
         universe: MDAnalysis Universe object
 
     Returns:
-        Dict mapping "resname+resid.segid" to list of atom indices
+        Dict mapping "RESNAME+resid[.chainID]" to list of atom indices
 
     Example:
         >>> u = mda.Universe("protein.pdb")
         >>> mapping = create_residue_atom_mapping(u)
-        >>> # mapping["ALA1.A"] = [0, 1, 2, 3, 4]
+        >>> # mapping["ALA1.A"] = [0, 1, 2, 3, 4], or mapping["ALA1"] without a chain ID
     """
-    return {
-        f"{residue.resname}{residue.resid}.{residue.segid}": [int(atom.index) for atom in residue.atoms]
-        for residue in universe.residues
-    }
-
-
+    mapping = {}
+    for residue in universe.residues:
+        chain_ids = getattr(residue.atoms, "chainIDs", None)
+        chain = str(chain_ids[0]).strip() if chain_ids is not None and len(chain_ids) else ""
+        key = f"{residue.resname.upper()}{residue.resid}"
+        if chain:
+            key += f".{chain}"
+        mapping[key] = [int(atom.index) for atom in residue.atoms]
+    return mapping
 
 
 def prepare_mda_universe(file_path: Path) -> mda.Universe:
@@ -216,10 +223,13 @@ def load_molecule_to_prolif(
             )
 
         universe = prepare_mda_universe(file_path)
-        residue_mapping = create_residue_atom_mapping(universe)
 
         try:
+            # Capitalize residue names before ProLIF builds its labels, so they read
+            # "ALA1.A"/"ALA1" and match create_residue_atom_mapping's keys
+            universe.residues.resnames = np.char.upper(universe.residues.resnames.astype(str))
             molecule = plf.Molecule.from_mda(universe)
+            residue_mapping = create_residue_atom_mapping(universe)
             return molecule, residue_mapping
         except Exception as e:
             raise ValueError(f"Could not create ProLIF molecule from {file_path}: {e}")

@@ -1,11 +1,11 @@
 [project]
 name = "so3lr-sf"
-version = "0.1.0"
+version = "2.0.0"
 description = "SO3krates Universal Pairwise Force Field with Long Range Interactions (SO3LR) as a scoring function for binding affinity calculations"
 authors = [{ name = "Hamza Ibrahim" }]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.12,<3.14"
 
 dependencies = [
     "numpy",
@@ -20,10 +20,12 @@ dependencies = [
     "matplotlib>=3.10.6,<4",
     "protobuf>=6.32.1,<7",
     "typing-extensions>=4.15.0,<5",
-    "jax==0.5.3",
-    "jaxlib==0.5.3",
+    "jax==0.10.2",
+    "jaxlib==0.10.2",
     "jaxtyping>=0.3.2,<0.4",
-    "orbax-checkpoint==0.11.13",
+    "orbax-checkpoint==0.12.4",
+    "flax==0.12.8",
+    "optax==0.2.8",
     # Git-sourced packages; URLs resolved in [tool.uv.sources] below.
     "so3lr",
     "mlff"
@@ -36,12 +38,20 @@ so3lrsf = "so3lr_sf:main"
 
 default-groups = ["test"]
 
+# Every git dependency is pinned to an exact commit. The mlff fork asks for branches
+# of glp / jax-md / jraph / jax-pme / comms; these overrides use the commits so3lr
+# v0.2.0 locks, so both resolve to one set.
 override-dependencies = [
-    "mlff @ git+https://github.com/hamzaibrahim21/mlff.git@v1.0-eda-import-eleccutoff"
+    "mlff @ git+https://github.com/hamzaibrahim21/mlff.git@9d56dbb17d05fb7944d7f18a1bebb71aaa335ae3",
+    "glp @ git+https://github.com/fbruenig/glp.git@2294f4f59e940be64c45bf5e4d1bea5cb90809f8",
+    "jax-md @ git+https://github.com/kabylda/jax-md.git@a1618449f7f00df5aa3b1e50105dacb5193b2cda",
+    "jraph @ git+https://github.com/google-deepmind/jraph.git@51f5990104f7374492f8f3ea1cbc47feb411c69c",
+    "jax-pme @ git+https://github.com/fbruenig/jax-pme.git@de9a3a9dfeb1f5b635a54a8f277c1ec3ecd2bf6d",
+    "comms @ git+https://github.com/sirmarcel/comms.git@496034fd9bbb58d3b82dbe1affd11b33a7537c42",
 ]
 [tool.uv.sources]
-so3lr = { git = "https://github.com/general-molecular-simulations/so3lr.git", rev = "5c6f36914bd2424563c1fd80bc21610960d947a4" }
-mlff = { git = "https://github.com/hamzaibrahim21/mlff.git", branch = "v1.0-eda-import-eleccutoff" }
+so3lr = { git = "https://github.com/general-molecular-simulations/so3lr.git", rev = "2a7480cb38cb0c75bc89784f32f8e253c1a70153" }
+mlff = { git = "https://github.com/hamzaibrahim21/mlff.git", rev = "9d56dbb17d05fb7944d7f18a1bebb71aaa335ae3" }  # branch v2.0-jax0.10
 
 [dependency-groups]
 test = [

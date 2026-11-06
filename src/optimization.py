@@ -103,7 +103,8 @@ def optimize_structure(
     output_path: Optional[Union[str, Path]] = None,
     opt_radius: Optional[float] = None,
     n_protein_atoms: Optional[int] = None,
-    protein_path: Optional[Union[str, Path]] = None
+    protein_path: Optional[Union[str, Path]] = None,
+    charge: Optional[int] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Optimize molecular structure using ASE optimizers and SO3LR-SF force field.
@@ -230,6 +231,9 @@ def optimize_structure(
             'constraint_info': constraint_info
         }
 
+    if charge is not None:
+        atoms.info['charge'] = charge
+
     # Use provided So3lrSfCalculator - let it handle fresh initialization
     # For optimization, we always need the MLFF calculator since JAX-MD doesn't support forces
     calc._init_so3lr_calculator()
@@ -294,7 +298,8 @@ def optimize_structure(
     return output_path_str, opt_info
 
 def constrained_optimization(ligand_file: str, ligand_name: str, working_protein_path: str,
-                                  output_dir: Path, calc, args, optimization_log: Optional[List], logger):
+                                  output_dir: Path, calc, args, optimization_log: Optional[List], logger,
+                                  charge_cpx: int = 0):
     """
     Perform constrained optimization of a protein-ligand complex.
 
@@ -359,6 +364,7 @@ def constrained_optimization(ligand_file: str, ligand_name: str, working_protein
     protein_atoms = load_ase_structure(working_protein_path)[0]
     ligand_atoms = load_ase_structure(ligand_file)[0]
     complex_atoms = protein_atoms + ligand_atoms
+    complex_atoms.info['charge'] = charge_cpx
 
     logger.debug(f"Complex built: {len(protein_atoms)} protein + {len(ligand_atoms)} ligand = {len(complex_atoms)} total atoms")
 
@@ -373,7 +379,8 @@ def constrained_optimization(ligand_file: str, ligand_name: str, working_protein
         optimizer=args.optimizer, fmax=args.fmax, steps=args.steps,
         output_path=opt_complex_path,
         opt_radius=args.opt_radius, n_protein_atoms=len(protein_atoms),
-        protein_path=working_protein_path
+        protein_path=working_protein_path,
+        charge=charge_cpx,
     )
 
     if args.opt_log and optimization_log is not None:
@@ -408,7 +415,8 @@ def constrained_optimization(ligand_file: str, ligand_name: str, working_protein
     return str(opt_protein_path), str(opt_ligand_path), optimized_complex_path
 
 
-def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None, charges=(0, 0, 0)):
+def process_single_ligand(ligand_file: str, args, calc, working_protein_path: str, output_dir: Path, optimization_log: Optional[List], logger, preloaded_protein_prolif=None, charges=(0, 0, 0),
+                          protein_energy_cache: Optional[Dict] = None):
     """
     Complete workflow for processing a single ligand with protein-ligand interaction analysis.
 
@@ -446,6 +454,8 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
         logger: Python logger for progress reporting
         preloaded_protein_prolif (Optional): Pre-loaded protein for explainability
                                             analysis (performance optimization)
+        protein_energy_cache (Optional[Dict]): Dict shared across a ligand series to
+                                            reuse the protein-alone energy; None disables it
 
     Returns:
         Tuple[Dict[str, Any], Optional[str]]:
@@ -498,7 +508,8 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
         # Check if optimization is requested
         if args.optimize:
             working_protein_path, working_ligand_path, working_complex_path = constrained_optimization(
-                ligand_file, ligand_name, working_protein_path, output_dir, calc, args, optimization_log, logger
+                ligand_file, ligand_name, working_protein_path, output_dir, calc, args, optimization_log, logger,
+                charge_cpx=charges[2],
             )
         else:
             # No optimization - use original structures
@@ -522,7 +533,8 @@ def process_single_ligand(ligand_file: str, args, calc, working_protein_path: st
             verbose=getattr(args, 'verbose', False),
             preloaded_protein_prolif=preloaded_protein_prolif,
             exp_outputs=exp_outputs,
-            charges=charges
+            charges=charges,
+            protein_energy_cache=protein_energy_cache,
         )
 
         # Handle results

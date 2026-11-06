@@ -1,15 +1,15 @@
-<p align="center">
-  <img src="logo/so3lrsf_overview.png" alt="SO3LR-SF overview" width="100%">
-</p>
-
-# **SO3LR-SF** - Advancing computational drug discovery with machine learning force fields.
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+# **SO3LR-SF** - Explainable ML force-field for evaluating protein–ligand binding energy using SO3LR
+[![Python 3.12 | 3.13](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![codecov](https://codecov.io/gh/volkamerlab/so3lr-sf/graph/badge.svg?token=A0X4RNCKBI)](https://codecov.io/gh/volkamerlab/so3lr-sf)
 [![CI](https://github.com/volkamerlab/so3lr-sf/workflows/CI/badge.svg)](https://github.com/volkamerlab/so3lr-sf/actions)
-[![Preprint](https://img.shields.io/badge/preprint-ChemRxiv-critical.svg)](https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1)
+[![Preprint](https://img.shields.io/badge/preprint-ChemRxiv-critical.svg)](https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v2)
 
 SO3LR-SF is a comprehensive Python package for calculating protein-ligand interaction energies using SO3LR machine learning force fields. It provides advanced features including structure optimization, explainability analysis, and molecular visualization.
+
+<p align="center">
+  <img src="logo/so3lrsf_overview.png" alt="SO3LR-SF overview" width="100%">
+</p>
 
 <details>
 <summary><h2>🚀 Features</h2></summary>
@@ -39,7 +39,7 @@ SO3LR-SF is a comprehensive Python package for calculating protein-ligand intera
 <summary><h2>📦 Installation</h2></summary>
 
 ### Prerequisites
-- Python 3.12 or higher
+- Python 3.12 or 3.13
 - [uv](https://docs.astral.sh/uv/) (package & environment manager)
 
 If you don't have `uv` yet:
@@ -57,6 +57,17 @@ cd so3lr-sf
 
 # Create the environment and install all dependencies (including the test group)
 uv sync
+```
+
+All dependencies are locked in `uv.lock`: JAX 0.10.2, `so3lr` v0.2.0 and the `mlff` fork,
+each git dependency pinned to an exact commit. Updating from an older so3lr-sf (JAX 0.5.3)?
+Run `uv sync` again to rebuild `.venv`. A local `models/` folder is no longer needed.
+
+**GPU (optional):** `uv sync` installs CPU-only JAX. On a machine with an NVIDIA GPU and
+CUDA 12 drivers, add the CUDA plugin afterwards:
+
+```bash
+uv pip install "jax[cuda12]==0.10.2"
 ```
 
 ### Activate the Environment
@@ -87,6 +98,32 @@ uv run pytest
 uv run so3lrsf --protein tests/test_data/alanine.xyz --ligands tests/test_data/water.sdf
 ```
 
+### SO3LR Tauri models
+
+The SO3LR Tauri weights ship inside the pinned upstream `so3lr` package, so no download is
+needed. Select a model by name with `--model`:
+
+| `--model` | Resolves to |
+|---|---|
+| `so3lr-t-s`, `so3lr-t-m`, `so3lr-t-l` | SO3LR-T-S / M / L, 2606 release |
+| `so3lr-tauri-{s,m,l}-2606` | the same models, by full name |
+| `so3lr-tauri-{s,m,l}-2602` | the published 2602 release |
+| `so3lr` | the original SO3LR model |
+| `PATH/TO/MODEL` | a checkpoint directory (`hyperparameters.json` plus `params.pkl` or `checkpoints/`), e.g. finetuned |
+
+The 2602 release is the published SO3LR Tauri release and works with `--model so3lr-tauri-{s,m,l}-2602`.
+All so3lr-sf benchmark results use the 2606 release, which is what `so3lr-t-s/m/l` and the default point to.
+
+Without `--model`, `so3lrsf` uses upstream's default, `so3lr-tauri-m-2606` (SO3LR-T-M). Earlier
+version (v1) defaulted to the original SO3LR model; use `--model so3lr` to reproduce those results.
+The Tauri weights are licensed CC BY-NC 4.0 (see the upstream `so3lr` repository).
+
+```bash
+uv run so3lrsf --protein protein.pdb --ligands ligand.sdf --model so3lr-t-m
+```
+
+See `benchmarks/README.md` for how `--model` is used across the benchmark suite.
+
 ### Docker Installation
 
 For containerized deployment, you can either pull the pre-built image or build from source:
@@ -94,23 +131,23 @@ For containerized deployment, you can either pull the pre-built image or build f
 #### Option 1: Pull Pre-built Image
 ```bash
 # Pull the pinned image
-docker pull hamzaibrahim21/so3lr-sf:v0.1.0
+docker pull hamzaibrahim21/so3lr-sf:v2.0.0
 
 # Run container
-docker run --rm -it hamzaibrahim21/so3lr-sf:v0.1.0
+docker run --rm -it hamzaibrahim21/so3lr-sf:v2.0.0
 
 # For GPU support (requires NVIDIA Container Toolkit)
-docker run --gpus all --rm -it hamzaibrahim21/so3lr-sf:v0.1.0
+docker run --gpus all --rm -it hamzaibrahim21/so3lr-sf:v2.0.0
 ```
 
 #### Option 2: Build from Source
 ```bash
 # Build the Docker image
-docker build -f Docker/Dockerfile -t so3lr-sf:v0.1.0 .
+docker build -f Docker/Dockerfile -t so3lr-sf:v2.0.0 .
 
 # Run the test suite (tests/ is not baked into the image; bind-mount the repo)
 docker run --rm -v "$PWD:/src" -w /src \
-  --entrypoint /app/.venv/bin/python so3lr-sf:v0.1.0 -m pytest tests/ --verbose
+  --entrypoint /app/.venv/bin/python so3lr-sf:v2.0.0 -m pytest tests/ --verbose
 ```
 
 </details>
@@ -202,6 +239,8 @@ warning is emitted — use PDB input for the full protocol.
 - `--elec-lr-cutoff FLOAT`: Long-range cutoff (Angstroms) for the electrostatic term (default: 10.0).
   Dispersion and the long-range neighbour list are pinned to 1000 Å. Recommended: **10** for
   ranking / relative potency, **1000** for absolute interaction energies compared to DFT.
+- `--model NAME|PATH`: `so3lr-t-s/m/l`, an upstream model name, or a checkpoint directory
+  (default: `so3lr-t-m`; see "SO3LR Tauri models" above).
 - `--dp`: Enable double precision (float64) for JAX-MD powered calculations
 
 ### Charge Parameters
@@ -371,25 +410,25 @@ so3lrsf \
       "ligand_explainability": {
         "protein_energy_components": {
           "electrostatic_energy": -13.823354721069336,
-          "zbl_repulsion": 36.19248580932617,
+          "repulsion": 36.19248580932617,
           "dispersion_energy": -6.992919445037842,
           "nn_energy": -679.03564453125
         },
         "ligand_energy_components": {
           "electrostatic_energy": -1.2963955402374268,
-          "zbl_repulsion": 2.4064440727233887,
+          "repulsion": 2.4064440727233887,
           "dispersion_energy": -0.5644962787628174,
           "nn_energy": -60.04219436645508
         },
         "complex_energy_components": {
           "electrostatic_energy": -14.730865478515625,
-          "zbl_repulsion": 38.59886932373047,
+          "repulsion": 38.59886932373047,
           "dispersion_energy": -9.317378997802734,
           "nn_energy": -740.4879150390625
         },
         "interaction_energy_components": {
           "electrostatic_energy": 0.3888847827911377,
-          "zbl_repulsion": -6.0558319091796875e-05,
+          "repulsion": -6.0558319091796875e-05,
           "dispersion_energy": -1.7599632740020752,
           "nn_energy": -1.4100761413574219
         }
@@ -428,7 +467,7 @@ If you use SO3LR-SF in your work, please cite the preprint:
 
 > Hamza Agha, Sergio Suárez-Dou, Adil Kabylda, Alexandre Tkatchenko, Andrea Volkamer.
 > *Explainable ML force-field for evaluating protein–ligand binding energy using SO3LR*.
-> ChemRxiv (2026). https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1
+> ChemRxiv (2026). https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v2
 
 ```bibtex
 @article{so3lrsf2026agha,
@@ -436,8 +475,8 @@ If you use SO3LR-SF in your work, please cite the preprint:
   title   = {Explainable ML force-field for evaluating protein--ligand binding energy using SO3LR},
   journal = {ChemRxiv},
   year    = {2026},
-  doi     = {10.26434/chemrxiv.15008482/v1},
-  url     = {https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v1},
+  doi     = {10.26434/chemrxiv.15008482/v2},
+  url     = {https://chemrxiv.org/doi/abs/10.26434/chemrxiv.15008482/v2},
   note    = {Preprint}
 }
 ```

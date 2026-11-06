@@ -452,7 +452,7 @@ def compute_energy_differences(
     # Component mapping to standard names
     component_mapping = {
         'nn_energy': 'MLFF',
-        'zbl_repulsion': 'ZBL',
+        'repulsion': 'Repulsion',
         'electrostatic_energy': 'Electrostatics',
         'dispersion_energy': 'Dispersion'
     }
