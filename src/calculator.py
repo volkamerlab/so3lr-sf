@@ -19,6 +19,7 @@ try:
     import so3lr
     from so3lr import to_jax_md, So3lrCalculator
     from so3lr.jaxmd_utils import neighbor_list_featurizer
+    from so3lr.model_registry import DEFAULT_MODEL, resolve_model
     from mlff.mdx.potential import MLFFPotentialSparse
     _jax_available = True
 except ImportError:
@@ -32,6 +33,23 @@ logger = logging.getLogger(__name__)
 # Long-range cutoff (Angstroms) for dispersion and the long-range neighbour list.
 DISPERSION_LR_CUTOFF = 1000.0
 
+# Short names for the SO3LR Tauri models (SO3LR-T-S/M/L), pinned to the 2606 release
+# so they cannot drift if upstream moves its floating ``so3lr-tauri-{s,m,l}`` aliases.
+# Upstream registry names (e.g. ``so3lr-tauri-m-2602``, ``so3lr``) and filesystem paths
+# pass through unchanged.
+MODEL_ALIASES = {
+    'so3lr-t-s': 'so3lr-tauri-s-2606',
+    'so3lr-t-m': 'so3lr-tauri-m-2606',
+    'so3lr-t-l': 'so3lr-tauri-l-2606',
+}
+
+
+def resolve_model_name(model: Optional[str]) -> Optional[str]:
+    """Map a so3lr-sf short alias to its canonical upstream name; leave anything else as is."""
+    if model is None:
+        return None
+    return MODEL_ALIASES.get(str(model).lower(), model)
+
 class So3lrSfCalculator:
     """
     A comprehensive SO3LR-SF energy calculator for molecular systems.
@@ -42,7 +60,7 @@ class So3lrSfCalculator:
 
     Attributes:
         elec_lr_cutoff (float): Electrostatic long-range cutoff distance
-        model (Optional[str]): Checkpoint directory, or None for the bundled SO3LR weights
+        model (Optional[str]): Upstream model name, short alias or checkpoint directory; None for the upstream default
         dtype (type): Numerical precision for calculations
         dp (bool): Double precision flag
         output_per_atom_energy_components (bool): Whether per-atom components are enabled
@@ -69,17 +87,19 @@ class So3lrSfCalculator:
                 (default: 10.0). Dispersion and the long-range neighbour list stay pinned at
                 DISPERSION_LR_CUTOFF (1000 A). Recommended: 10 for ranking / relative potency,
                 1000 for absolute interaction energies compared to DFT.
-            model: Path to a checkpoint directory for a specific SO3LR release or finetuned
-                checkpoint. None (default) uses the bundled SO3LR weights.
+            model: A model name bundled with so3lr (``so3lr-t-s/m/l`` -> the 2606 SO3LR Tauri
+                models, ``so3lr-tauri-m-2602``, ``so3lr`` for v1, ...) or a path to a
+                checkpoint directory. None (default) uses upstream's default model.
 
         Example:
-            >>> # Basic calculator (bundled SO3LR, electrostatics screening at 10 A, dispersion at 1000 A)
+            >>> # Basic calculator (upstream default model, electrostatics screening at 10 A, dispersion at 1000 A)
             >>> calc = So3lrSfCalculator()
             >>>
             >>> # Calculator with EDA
             >>> calc = So3lrSfCalculator(output_per_atom_energy_components=True)
             >>>
-            >>> # A specific / finetuned checkpoint
+            >>> # A bundled Tauri model by name, or a finetuned checkpoint by path
+            >>> calc = So3lrSfCalculator(model="so3lr-t-m")
             >>> calc = So3lrSfCalculator(model="PATH/TO/MODEL")
         """
         self.dtype = np.float64 if dp else dtype
@@ -91,7 +111,8 @@ class So3lrSfCalculator:
         self.elec_lr_cutoff = elec_lr_cutoff
         self.dp = dp
         self.output_per_atom_energy_components = output_per_atom_energy_components
-        self.model = model
+        self.model = resolve_model_name(model)
+        model = self.model
         self._model_kw = {} if model is None else {'model': model}
         self.supports_fragment_eda = True
 
@@ -276,16 +297,12 @@ class So3lrSfCalculator:
                 'nn_energy', 'zbl_repulsion', 'electrostatic_energy', 'dispersion_energy'
             ]
 
-        if self.model is None:
-            workdir = Path(so3lr.__file__).parent / 'params'
-            from_file = True
-        else:
-            workdir = self.model
-            from_file = (Path(self.model) / 'params.pkl').exists()
+        spec = resolve_model(self.model)
+        logger.info(f"Model: {self.model or DEFAULT_MODEL} -> {spec.dir}")
 
         return MLFFPotentialSparse.create_from_workdir(
-            workdir=workdir,
-            from_file=from_file,
+            workdir=spec.dir,
+            from_file=spec.from_file,
             dtype=jax_dtype,
             long_range_kwargs=long_range_kwargs,
             **extra_kwargs,

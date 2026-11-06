@@ -1,26 +1,25 @@
 # SO3LR-SF Docker Image
 
 Containerized build of SO3LR-SF with the `so3lrsf` CLI and a pinned environment
-(JAX 0.5.3, CUDA 12, commit-pinned `so3lr`/`mlff`). Runs CPU-only anywhere, or
-on GPU with the NVIDIA Container Toolkit.
+(JAX 0.10.2, CUDA 12, commit-pinned `so3lr`/`mlff`).
 
 ## Run
 
 ```bash
 # Pull the pinned image
-docker pull hamzaibrahim21/so3lr-sf:v0.1.0
+docker pull hamzaibrahim21/so3lr-sf:v2.0.0
 
 # Interactive shell
-docker run --rm -it hamzaibrahim21/so3lr-sf:v0.1.0
+docker run --rm -it hamzaibrahim21/so3lr-sf:v2.0.0
 
 # Run a calculation (mount your input/output dir, and -w into it)
 docker run --rm -v "$PWD/data:/data" -w /data \
-  hamzaibrahim21/so3lr-sf:v0.1.0 \
+  hamzaibrahim21/so3lr-sf:v2.0.0 \
   so3lrsf --protein protein.pdb --ligands ligands.sdf --verbose
 
 # On GPU: add --gpus all
 docker run --gpus all --rm -v "$PWD/data:/data" -w /data \
-  hamzaibrahim21/so3lr-sf:v0.1.0 \
+  hamzaibrahim21/so3lr-sf:v2.0.0 \
   so3lrsf --protein protein.pdb --ligands ligands.sdf --verbose
 ```
 

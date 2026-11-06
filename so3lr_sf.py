@@ -54,7 +54,8 @@ Examples:
   # Process ligand directory with double precision
   python so3lr_sf.py protein.pdb ligands.sdf --optimize --exp-lig --dp
 
-  # Use a SO3LR Tauri model or a finetuned checkpoint instead of the bundled SO3LR weights
+  # Pick a model by name (so3lr-t-s/m/l, so3lr) or by checkpoint path
+  python so3lr_sf.py protein.pdb ligand.sdf --model so3lr-t-l
   python so3lr_sf.py protein.pdb ligand.sdf --model PATH/TO/MODEL
         """
     )
@@ -148,8 +149,9 @@ Examples:
         "--model",
         type=str,
         default=None,
-        help="Path to a SO3LR checkpoint directory (with hyperparameters.json plus "
-             "params.pkl or checkpoints/). Omit to use the bundled SO3LR weights."
+        help="SO3LR model: so3lr-t-s / so3lr-t-m / so3lr-t-l (SO3LR Tauri, 2606 release), "
+             "an upstream model name (e.g. so3lr-tauri-m-2602, so3lr for the original model), "
+             "or a path to a checkpoint directory."
     )
 
     # Charge parameters
