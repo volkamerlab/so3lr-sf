@@ -764,6 +764,52 @@ class TestProcessSingleLigand:
             assert result['interaction_energy'] == -1.8
 
     @pytest.mark.unit
+    def test_process_single_ligand_passes_complex_charge_to_optimization(
+        self, temp_dir, water_files, alanine_files, mock_calculator
+    ):
+        """Verify that complex charge (charges[2]) is propagated to the complex Atoms during optimization."""
+        from src.optimization import process_single_ligand
+        from unittest.mock import Mock
+
+        mock_args = Mock()
+        mock_args.optimize = 4.0
+        mock_args.opt_radius = 4.0
+        mock_args.optimizer = 'FIRE'
+        mock_args.fmax = 0.05
+        mock_args.steps = 5
+        mock_args.opt_log = False
+        mock_args.exp_lig = False
+        mock_args.exp_prot = False
+        mock_args.exp_3d = False
+        mock_args.eda = False
+        mock_args.verbose = False
+
+        captured_charges = []
+
+        def fake_optimize_structure(atoms, calc, **kwargs):
+            captured_charges.append((atoms.info.get('charge'), kwargs.get('charge')))
+            out_path = kwargs['output_path']
+            from src.utils import write_structure
+            write_structure(atoms, out_path)
+            return str(out_path), {'converged': 'yes', 'steps': 1}
+
+        with patch('src.optimization.optimize_structure', side_effect=fake_optimize_structure), \
+             patch('src.optimization.protein_ligand_interaction', return_value=-3.0):
+            result, error = process_single_ligand(
+                ligand_file=str(water_files['xyz']),
+                args=mock_args,
+                calc=mock_calculator,
+                working_protein_path=str(alanine_files['pdb']),
+                output_dir=temp_dir,
+                optimization_log=None,
+                logger=Mock(),
+                charges=(-2, 1, -1),
+            )
+
+        assert error is None
+        assert captured_charges == [(-1, -1)]
+
+    @pytest.mark.unit
     def test_process_single_ligand_error_handling(self, temp_dir, water_files, mock_calculator):
         """Test error handling in process_single_ligand."""
         from src.optimization import process_single_ligand
