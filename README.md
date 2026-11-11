@@ -481,3 +481,31 @@ If you use SO3LR-SF in your work, please cite the preprint:
 }
 ```
 
+Please also cite the SO3LR paper for the model you use.
+
+SO3LR Tauri:
+
+```bibtex
+@article{kabylda2026so3lrtauri,
+  author  = {Kabylda, Adil and Br{\"u}nig, Florian N. and Gallegos, Miguel and Frank, J. Thorben and Moerman, Evgeny and Unke, Oliver T. and Chmiela, Stefan and M{\"u}ller, Klaus-Robert and Tkatchenko, Alexandre},
+  title   = {{SO3LR Tauri}: Generally Applicable Force Fields for Reactive (Bio)Molecular Simulations Covering the Periodic Table},
+  journal = {arXiv preprint arXiv:2611.06237},
+  year    = {2026},
+  url     = {https://arxiv.org/abs/2611.06237}
+}
+```
+
+SO3LR:
+
+```bibtex
+@article{kabylda2025so3lr,
+  author  = {Kabylda, Adil and Frank, J. Thorben and Su{\'a}rez-Dou, Sergio and Khabibrakhmanov, Almaz and Medrano Sandonas, Leonardo and Unke, Oliver T. and Chmiela, Stefan and M{\"u}ller, Klaus-Robert and Tkatchenko, Alexandre},
+  title   = {Molecular Simulations with a Pretrained Neural Network and Universal Pairwise Force Fields},
+  journal = {Journal of the American Chemical Society},
+  volume  = {147},
+  number  = {37},
+  pages   = {33723},
+  year    = {2025},
+  doi     = {10.1021/jacs.5c09558}
+}
+```
