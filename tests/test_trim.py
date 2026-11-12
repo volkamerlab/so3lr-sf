@@ -157,11 +157,12 @@ class TestTrimStructure:
         # Indices should be sorted
         assert atoms_to_keep == sorted(atoms_to_keep)
 
-        # Caps are (symbol, position) tuples
+        # Caps are (symbol, position, boundary atom index) tuples
         assert isinstance(caps, list)
-        for symbol, position in caps:
+        for symbol, position, parent in caps:
             assert symbol == "H"
             assert len(position) == 3
+            assert parent in atoms_to_keep
 
     @pytest.mark.unit
     def test_trim_by_residues_fallback_to_atoms(self, water_files, alanine_files, caplog):
@@ -380,17 +381,17 @@ class TestValenceCapping:
         )
 
         assert len(caps) > 0
-        assert all(symbol == "H" for symbol, _ in caps)
+        assert all(symbol == "H" for symbol, _, _ in caps)
 
         # Every cap sits at a plausible X-H bond length from some kept atom
         kept_positions = protein.get_positions()[atoms_to_keep]
-        for _, cap_pos in caps:
+        for _, cap_pos, _ in caps:
             nearest = float(np.linalg.norm(kept_positions - cap_pos, axis=1).min())
             assert 0.8 <= nearest <= 1.4
 
     @pytest.mark.unit
     def test_capped_hydrogens_survive_the_write(self, peptide_files, temp_dir):
-        """The written trimmed PDB has exactly (kept atoms + caps), caps last and all H."""
+        """The written trimmed PDB has exactly (kept atoms + caps), and every cap is a named H."""
         import logging
         from src.utils import write_structure
 
@@ -412,8 +413,54 @@ class TestValenceCapping:
         )[0]
 
         assert len(trimmed) == len(atoms_to_keep) + len(caps)
-        cap_symbols = trimmed.get_chemical_symbols()[len(atoms_to_keep):]
-        assert all(s == "H" for s in cap_symbols)
+        cap_names = [n for n in trimmed.arrays["atomtypes"] if n.strip().startswith("HC")]
+        assert len(cap_names) == len(caps)
+
+    @pytest.mark.unit
+    def test_caps_are_named_and_belong_to_their_residue(self, peptide_files, temp_dir):
+        """Caps carry an HC<n> name and their parent's residue, without splitting residues."""
+        import logging
+        from src.utils import write_structure
+        from src.molecule_loader import create_residue_atom_mapping
+
+        protein = load_ase_structure(peptide_files['pdb'])[0]
+        ligand = load_ase_structure(peptide_files['ligand'])[0]
+        atoms_to_keep, caps = _trim_by_residues(
+            peptide_files['pdb'], protein, protein.get_positions(),
+            ligand.get_positions(), 3.0, logging.getLogger(__name__)
+        )
+        assert len(caps) > 0
+
+        pdb_copy = temp_dir / "peptide.pdb"
+        write_structure(protein, pdb_copy)
+        universe = prepare_mda_universe(Path(trim_structure(pdb_copy, peptide_files['ligand'], radius=3.0)))
+
+        caps_in_file = universe.atoms[[n.startswith("HC") for n in universe.atoms.names]]
+        assert len(caps_in_file) == len(caps)
+        assert all(e == "H" for e in caps_in_file.elements)
+
+        # Each cap is in the residue of the boundary atom it saturates
+        expected = sorted(
+            (str(protein.arrays["residuenames"][p]), int(protein.arrays["residuenumbers"][p]))
+            for _, _, p in caps
+        )
+        got = sorted((a.resname, int(a.resid)) for a in caps_in_file)
+        assert got == expected
+
+        # No blank or split residues: one residue per kept residue, every atom mapped once
+        kept_residues = {
+            (str(protein.arrays["residuenames"][i]), int(protein.arrays["residuenumbers"][i]))
+            for i in atoms_to_keep
+        }
+        assert len(universe.residues) == len(kept_residues)
+        assert all(r.resname.strip() for r in universe.residues)
+        mapping = create_residue_atom_mapping(universe)
+        assert len(mapping) == len(kept_residues)
+        assert sorted(i for idx in mapping.values() for i in idx) == list(range(len(universe.atoms)))
+
+        # Atom names are unique within each residue
+        for res in universe.residues:
+            assert len(set(res.atoms.names)) == len(res.atoms)
 
     @pytest.mark.unit
     def test_no_spurious_caps_from_placeholder_cell(self, peptide_files):
