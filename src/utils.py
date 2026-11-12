@@ -256,7 +256,7 @@ def save_results(results, output_dir, args, protein_path, optimization_log, logg
                     'protein': str(protein_path),
                     'ligands_source': args.ligands,
                     'trim': args.trim,
-                    'trim_radius': args.radius if args.trim else None,
+                    'trim_radius': args.trim,
                     'optimize': args.optimize,
                     'opt_radius': getattr(args, 'opt_radius', None) if args.optimize else None,
                     'ligand explain 2D': args.exp_lig,

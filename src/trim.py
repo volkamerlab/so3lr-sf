@@ -30,7 +30,7 @@ _CAP_BOND_LENGTH_DEFAULT = 1.02
 _PEPTIDE_BOND_CUTOFF = 1.8
 
 
-CapList = List[Tuple[str, np.ndarray]]
+CapList = List[Tuple[str, np.ndarray, int]]
 
 
 def trim_structure(
@@ -120,10 +120,7 @@ def trim_structure(
 
     # Saturate valences that truncation left open with capping hydrogens
     if caps:
-        trimmed_protein += Atoms(
-            ['H'] * len(caps),
-            positions=np.array([pos for _, pos in caps]),
-        )
+        trimmed_protein = _insert_caps(protein, atoms_to_keep, caps)
         logger.info(f"Added {len(caps)} capping hydrogen(s) at truncation boundaries")
 
     trimmed_protein_path = protein_path.with_name(f"{protein_path.stem}_trimmed_{radius}A_{trimming_method}{protein_ext}")
@@ -178,7 +175,7 @@ def _saturate_open_valences(full_atoms: Atoms, kept_indices: List[int], logger) 
         logger: Logger instance.
 
     Returns:
-        List of ``("H", xyz)`` tuples, one per severed bond.
+        List of ``("H", xyz, boundary_index)`` tuples, one per severed bond.
     """
     kept = set(int(i) for i in kept_indices)
     if not kept or len(kept) == len(full_atoms):
@@ -204,18 +201,47 @@ def _saturate_open_valences(full_atoms: Atoms, kept_indices: List[int], logger) 
         if norm < 1e-6:
             continue
         length = _CAP_BOND_LENGTH.get(symbols[a], _CAP_BOND_LENGTH_DEFAULT)
-        caps.append(("H", positions[a] + (length / norm) * vec))
+        caps.append(("H", positions[a] + (length / norm) * vec, int(a)))
 
     # drop caps that would sit on top of each other.
     unique: CapList = []
-    for sym, pos in caps:
-        if any(np.linalg.norm(pos - kept_pos) < 0.3 for _, kept_pos in unique):
+    for sym, pos, parent in caps:
+        if any(np.linalg.norm(pos - kept_pos) < 0.3 for _, kept_pos, _ in unique):
             continue
-        unique.append((sym, pos))
+        unique.append((sym, pos, parent))
 
     if unique:
         logger.info(f"Saturating {len(unique)} open valence(s) left by trimming with hydrogen")
     return unique
+
+
+def _insert_caps(protein: Atoms, kept_indices: List[int], caps: CapList) -> Atoms:
+    """
+    Return the trimmed structure with each cap named ``HC<n>`` inside the residue it saturates.
+
+    Caps copy their boundary atom's PDB fields (residue name/number, ...) and are
+    placed right after that atom; PDB readers split residues on consecutive
+    changes, so a cap appended at the end would become a second residue.
+    """
+    kept = list(kept_indices)
+    parents = [parent for _, _, parent in caps]
+    res = list(zip(protein.arrays["residuenames"], protein.arrays["residuenumbers"]))
+
+    cap_atoms = protein[parents]  # inherits the parents' residue info
+    cap_atoms.set_chemical_symbols(["H"] * len(caps))
+    cap_atoms.set_positions([pos for _, pos, _ in caps])
+
+    count: dict = {}
+    names = []
+    for parent in parents:
+        count[res[parent]] = count.get(res[parent], 0) + 1
+        names.append(f"HC{count[res[parent]]}")
+    cap_atoms.set_array("atomtypes", np.array(names, dtype=protein.arrays["atomtypes"].dtype))
+
+    # Each cap goes right after its parent atom, which keeps the residue contiguous.
+    sort_key = [(i, 0) for i in kept] + [(p, 1) for p in parents]
+    order = sorted(range(len(sort_key)), key=sort_key.__getitem__)
+    return (protein[kept] + cap_atoms)[order]
 
 
 def _build_peptide_graph(residues: List[dict], protein_positions: np.ndarray):
